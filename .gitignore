@@ -4,3 +4,4 @@ agent-identity*.json
 node_modules/
 dist/
 *.log
+agent-004-stage2-attack-library-FINAL.md
