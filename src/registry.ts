@@ -11,6 +11,7 @@ import { rateLimitAttacks } from "./attacks/rate-limit";
 import { timingAttacks } from "./attacks/timing";
 import { protocolAttacks } from "./attacks/protocol";
 import { mcpAttacks } from "./attacks/mcp";
+import { marketAttacks } from "./attacks/market";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -440,6 +441,47 @@ register({
   defenseTargeted: "MCP body size limit and payload validation",
   difficultyTier: "medium",
   execute: mcpAttacks[2].execute,
+});
+
+// Category 10: Market Abuse
+register({
+  id: "10.1",
+  name: "Market resolution before deadline",
+  category: "Market Abuse",
+  description: "Create a market with future deadline, immediately try to resolve",
+  defenseTargeted: "Market deadline enforcement",
+  difficultyTier: "medium",
+  execute: marketAttacks[0].execute,
+});
+
+register({
+  id: "10.2",
+  name: "Market resolve without identity signing",
+  category: "Market Abuse",
+  description: "Resolve a market using only REST key auth (documented known limitation)",
+  defenseTargeted: "Market resolution authorization",
+  difficultyTier: "high",
+  execute: marketAttacks[1].execute,
+});
+
+register({
+  id: "10.3",
+  name: "Market position spam",
+  category: "Market Abuse",
+  description: "Flood one market with positions from many identities",
+  defenseTargeted: "Batch settlement under load",
+  difficultyTier: "high",
+  execute: marketAttacks[2].execute,
+});
+
+register({
+  id: "10.4",
+  name: "Malformed market.position payload",
+  category: "Market Abuse",
+  description: "Invalid side values, nonexistent market, or extra fields in position payload",
+  defenseTargeted: "Market position input validation",
+  difficultyTier: "medium",
+  execute: marketAttacks[3].execute,
 });
 
 // ---------------------------------------------------------------------------

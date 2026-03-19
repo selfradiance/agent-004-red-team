@@ -11,6 +11,7 @@ import { rateLimitAttacks } from "./attacks/rate-limit";
 import { timingAttacks } from "./attacks/timing";
 import { protocolAttacks } from "./attacks/protocol";
 import { mcpAttacks } from "./attacks/mcp";
+import { marketAttacks } from "./attacks/market";
 
 const allScenarios: AttackScenario[] = [
   ...replayAttacks,
@@ -22,6 +23,7 @@ const allScenarios: AttackScenario[] = [
   ...timingAttacks,
   ...protocolAttacks,
   ...mcpAttacks,
+  ...marketAttacks,
 ];
 
 export async function runAttacks(client: AttackClient): Promise<AttackLog> {
