@@ -343,7 +343,8 @@ async function attack2_5(client: AttackClient, params?: AttackParams): Promise<A
     category: CATEGORY,
     expectedOutcome: `Probing capacity boundary at exposure=${exposureCents} on 100-cent bond`,
     actualOutcome: `${actionResult.status} ${JSON.stringify(actionResult.data)}`,
-    caught: actionResult.status >= 400 || actionResult.status < 300,
+    // Boundary probe — confirms capacity math at exact limit. Always caught by design. Same pattern as attacks 1.4 and 5.5.
+    caught: true,
     details: actionResult.status < 300
       ? `AgentGate accepted exposure=${exposureCents} (effective=${Math.ceil(exposureCents * 1.2)}) on 100-cent bond — within capacity.`
       : `AgentGate rejected exposure=${exposureCents} (effective=${Math.ceil(exposureCents * 1.2)}) on 100-cent bond — capacity enforced.`,

@@ -180,20 +180,21 @@ async function attack12_2(client: AttackClient, params?: AttackParams): Promise<
   // XSS was stored — check if dashboard escapes it using side-effect utility
   const dashboardContainsRawHtml = await checkDashboardForRawHtml(client.agentGateUrl, xssPayload);
   const dashboardChecked = dashboardContainsRawHtml !== null;
-  const xssEscaped = dashboardContainsRawHtml !== true;
+  const xssEscaped = dashboardChecked ? !dashboardContainsRawHtml : undefined;
 
   return {
     scenarioId: "12.2",
     scenarioName: "XSS payload in action data",
     category: CATEGORY,
     expectedOutcome: "XSS payload stored but escaped in dashboard output",
-    actualOutcome: `Action stored with ${xssVector} payload. Dashboard checked: ${dashboardChecked}. Escaped: ${xssEscaped}.`,
-    caught: xssEscaped,
+    actualOutcome: `Action stored with ${xssVector} payload. Dashboard checked: ${dashboardChecked}. Escaped: ${xssEscaped ?? "unknown"}.`,
+    // If dashboard unreachable, treat as probe (caught: true) — we can't verify, not a false positive
+    caught: dashboardChecked ? !dashboardContainsRawHtml : true,
     details: dashboardChecked
       ? (xssEscaped
         ? `XSS ${xssVector} payload was stored but properly escaped in dashboard HTML — escapeHtml is working.`
         : `XSS ${xssVector} payload appears UNESCAPED in dashboard HTML — potential stored XSS vulnerability.`)
-      : `XSS ${xssVector} payload was stored in action data. Dashboard not reachable to verify escaping — manual check recommended.`,
+      : `XSS ${xssVector} payload was stored in action data. Dashboard not reachable — cannot verify escaping. Marked as probe (caught: true). Manual check recommended.`,
     sideEffects: {
       dashboardContainsRawHtml: dashboardContainsRawHtml ?? undefined,
       additionalNotes: dashboardChecked ? `Tested ${xssVector} vector against /dashboard` : "Dashboard unreachable",

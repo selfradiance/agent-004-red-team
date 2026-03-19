@@ -19,7 +19,8 @@ async function main() {
 
   const roundsIndex = process.argv.indexOf("--rounds");
   const roundsArg = roundsIndex !== -1 ? parseInt(process.argv[roundsIndex + 1], 10) : NaN;
-  const rounds = Number.isFinite(roundsArg) && roundsArg > 0 ? roundsArg : 3;
+  // Cap at 20 rounds to prevent runaway API costs.
+  const rounds = Math.min(Number.isFinite(roundsArg) && roundsArg > 0 ? roundsArg : 3, 20);
 
   const isStatic = process.argv.includes("--static");
 

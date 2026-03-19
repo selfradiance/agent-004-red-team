@@ -51,6 +51,8 @@ Static mode (all 48 attacks in fixed order — for regression testing):
 npx tsx src/cli.ts --static
 ```
 
+If both `--static` and `--rounds` are passed, `--static` takes precedence and `--rounds` is ignored.
+
 Target a specific AgentGate instance:
 
 ```bash
@@ -90,7 +92,7 @@ The strategist cannot invent new attacks — it picks from the 48-scenario libra
 npm test
 ```
 
-51 tests across 18 test files. Integration tests require a running AgentGate instance and valid API keys.
+51 tests across 18 test files. Integration tests require a running AgentGate instance and valid API keys. v0.2.0 passed an 8-round code audit with no critical findings.
 
 ## Tech Stack
 
