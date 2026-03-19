@@ -3,7 +3,7 @@
 import { randomUUID } from "node:crypto";
 import type { AttackResult } from "../log";
 import { signRequest } from "../agentgate-client";
-import type { AttackScenario, AttackClient } from "./replay";
+import type { AttackScenario, AttackClient, AttackParams } from "./replay";
 
 const CATEGORY = "Rate Limiting";
 
@@ -46,11 +46,15 @@ async function signedPost(
 // Attack 6.1: Exceed execution rate limit
 // ---------------------------------------------------------------------------
 
-async function attack6_1(client: AttackClient): Promise<AttackResult> {
-  // Lock a large bond (1000 cents) so capacity isn't the limiting factor
+async function attack6_1(client: AttackClient, params?: AttackParams): Promise<AttackResult> {
+  const requestCount = (typeof params?.request_count === "number" ? params.request_count : 11);
+  const exposurePerRequest = (typeof params?.exposure_per_request === "number" ? params.exposure_per_request : 10);
+
+  // Lock a bond large enough to cover all requests without hitting capacity
+  const bondAmount = exposurePerRequest * requestCount * 2;
   const bondResult = await signedPost(client, "/v1/bonds/lock", {
     identityId: client.identityId,
-    amountCents: 1000,
+    amountCents: bondAmount,
     currency: "USD",
     ttlSeconds: 300,
     reason: "rate-limit-test-6.1",
@@ -61,7 +65,7 @@ async function attack6_1(client: AttackClient): Promise<AttackResult> {
       scenarioId: "6.1",
       scenarioName: "Exceed execution rate limit",
       category: CATEGORY,
-      expectedOutcome: "11th action rejected — rate limit exceeded",
+      expectedOutcome: `Request ${requestCount} rejected — rate limit exceeded`,
       actualOutcome: `Bond lock failed: ${bondResult.status} ${JSON.stringify(bondResult.data)}`,
       caught: false,
       details: "Could not complete test — bond lock did not succeed.",
@@ -69,18 +73,17 @@ async function attack6_1(client: AttackClient): Promise<AttackResult> {
   }
 
   const bondId = bondResult.data.bondId as string;
-  const exposureCents = 10; // 10 cents each → 12 effective → 132 total for 11, well within 1000
 
-  // Fire 11 execute requests in rapid succession
+  // Fire requests in rapid succession
   const results: { index: number; status: number; data: Record<string, unknown> }[] = [];
 
-  for (let i = 0; i < 11; i++) {
+  for (let i = 0; i < requestCount; i++) {
     const actionResult = await signedPost(client, "/v1/actions/execute", {
       identityId: client.identityId,
       bondId,
       actionType: "rate-limit-test",
       payload: { attempt: i + 1 },
-      exposure_cents: exposureCents,
+      exposure_cents: exposurePerRequest,
     });
     results.push({ index: i + 1, status: actionResult.status, data: actionResult.data });
   }
@@ -95,12 +98,12 @@ async function attack6_1(client: AttackClient): Promise<AttackResult> {
     scenarioId: "6.1",
     scenarioName: "Exceed execution rate limit",
     category: CATEGORY,
-    expectedOutcome: "First 10 succeed, 11th rejected with 429 rate limit",
+    expectedOutcome: `Rate limit hit within ${requestCount} requests`,
     actualOutcome: `${succeeded} succeeded, ${rateLimited} rate-limited. Last request: ${lastResult.status} ${JSON.stringify(lastResult.data)}`,
     caught,
     details: caught
-      ? `AgentGate rate-limited after ${succeeded} requests (${rateLimited} rejected with 429).`
-      : `All ${succeeded} requests succeeded — rate limiting may not be enforced on execute_bonded_action.`,
+      ? `AgentGate rate-limited after ${succeeded} of ${requestCount} requests (${rateLimited} rejected with 429).`
+      : `All ${succeeded} of ${requestCount} requests succeeded — rate limiting may not be enforced.`,
   };
 }
 
@@ -115,6 +118,6 @@ export const rateLimitAttacks: AttackScenario[] = [
     category: CATEGORY,
     description: "Fire 11 execute requests in rapid succession from one identity (limit is 10/60s)",
     expectedOutcome: "11th request rate-limited with 429",
-    execute: attack6_1,
+    execute: (client, params?) => attack6_1(client, params),
   },
 ];
