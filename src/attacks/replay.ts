@@ -202,6 +202,80 @@ async function attack1_3(client: AttackClient, params?: AttackParams): Promise<A
 }
 
 // ---------------------------------------------------------------------------
+// Attack 1.4: Timestamp at exact boundary
+// ---------------------------------------------------------------------------
+
+async function attack1_4(client: AttackClient, params?: AttackParams): Promise<AttackResult> {
+  const timestampAgeSeconds = (typeof params?.timestamp_age_seconds === "number" ? params.timestamp_age_seconds : 60);
+
+  const apiPath = "/v1/bonds/lock";
+  const body = {
+    identityId: client.identityId,
+    amountCents: 100,
+    currency: "USD",
+    ttlSeconds: 300,
+    reason: "replay-test-1.4",
+  };
+
+  // Timestamp exactly at the boundary of the staleness window
+  const boundaryTimestamp = (Date.now() - timestampAgeSeconds * 1000).toString();
+  const req = buildSignedRequest(client, apiPath, body, { timestamp: boundaryTimestamp });
+
+  const result = await rawPost(client, apiPath, body, req);
+
+  // At exactly 60s, behavior depends on whether the check is < or <=.
+  // Either outcome is informative — we report what happened.
+  const caught = result.status >= 400;
+  return {
+    scenarioId: "1.4",
+    scenarioName: "Timestamp at exact boundary",
+    category: CATEGORY,
+    expectedOutcome: `Probing staleness boundary at ${timestampAgeSeconds}s — may accept or reject`,
+    actualOutcome: `${result.status} ${JSON.stringify(result.data)}`,
+    caught,
+    details: caught
+      ? `AgentGate rejected timestamp at ${timestampAgeSeconds}s age (${result.status}) — boundary is exclusive.`
+      : `AgentGate accepted timestamp at ${timestampAgeSeconds}s age — boundary is inclusive or window is wider than expected.`,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Attack 1.5: Future timestamp
+// ---------------------------------------------------------------------------
+
+async function attack1_5(client: AttackClient, params?: AttackParams): Promise<AttackResult> {
+  const futureOffsetSeconds = (typeof params?.future_offset_seconds === "number" ? params.future_offset_seconds : 10);
+
+  const apiPath = "/v1/bonds/lock";
+  const body = {
+    identityId: client.identityId,
+    amountCents: 100,
+    currency: "USD",
+    ttlSeconds: 300,
+    reason: "replay-test-1.5",
+  };
+
+  // Timestamp N seconds in the future (AgentGate rejects >5s ahead per milestone 61)
+  const futureTimestamp = (Date.now() + futureOffsetSeconds * 1000).toString();
+  const req = buildSignedRequest(client, apiPath, body, { timestamp: futureTimestamp });
+
+  const result = await rawPost(client, apiPath, body, req);
+
+  const caught = result.status >= 400;
+  return {
+    scenarioId: "1.5",
+    scenarioName: "Future timestamp",
+    category: CATEGORY,
+    expectedOutcome: `Rejected — timestamp ${futureOffsetSeconds}s in the future exceeds 5s tolerance`,
+    actualOutcome: `${result.status} ${JSON.stringify(result.data)}`,
+    caught,
+    details: caught
+      ? `AgentGate rejected the future timestamp at +${futureOffsetSeconds}s (${result.status}).`
+      : `AgentGate accepted a request with a timestamp ${futureOffsetSeconds}s in the future — future timestamp validation may be missing or too lenient.`,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Exported scenario list
 // ---------------------------------------------------------------------------
 
@@ -229,5 +303,21 @@ export const replayAttacks: AttackScenario[] = [
     description: "Send a signed request with a timestamp 120 seconds in the past",
     expectedOutcome: "rejected — stale timestamp",
     execute: (client, params?) => attack1_3(client, params),
+  },
+  {
+    id: "1.4",
+    name: "Timestamp at exact boundary",
+    category: CATEGORY,
+    description: "Send a signed request with a timestamp at the exact 60s staleness boundary",
+    expectedOutcome: "probing boundary — may accept or reject",
+    execute: (client, params?) => attack1_4(client, params),
+  },
+  {
+    id: "1.5",
+    name: "Future timestamp",
+    category: CATEGORY,
+    description: "Send a signed request with a timestamp 10s in the future (>5s tolerance)",
+    expectedOutcome: "rejected — future timestamp",
+    execute: (client, params?) => attack1_5(client, params),
   },
 ];

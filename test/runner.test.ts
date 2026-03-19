@@ -61,11 +61,11 @@ describe.skipIf(!process.env.AGENTGATE_REST_KEY || process.env.AGENTGATE_REST_KE
       };
     });
 
-    it("all 15 attacks are caught by AgentGate", { timeout: 60000 }, async () => {
+    it("all attacks are caught by AgentGate", { timeout: 60000 }, async () => {
       const log = await runAttacks(client);
       const results = log.getResults();
 
-      expect(results).toHaveLength(15);
+      expect(results.length).toBeGreaterThanOrEqual(15);
 
       const uncaught = results.filter((r) => !r.caught);
       if (uncaught.length > 0) {

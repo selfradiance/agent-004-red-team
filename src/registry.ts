@@ -71,6 +71,26 @@ register({
   execute: replayAttacks[2].execute,
 });
 
+register({
+  id: "1.4",
+  name: "Timestamp at exact boundary",
+  category: "Replay Attacks",
+  description: "Send a signed request with a timestamp at the exact 60s staleness boundary",
+  defenseTargeted: "Off-by-one in staleness check",
+  difficultyTier: "medium",
+  execute: replayAttacks[3].execute,
+});
+
+register({
+  id: "1.5",
+  name: "Future timestamp",
+  category: "Replay Attacks",
+  description: "Send a signed request with a timestamp 10s in the future (>5s tolerance)",
+  defenseTargeted: "Future timestamp rejection",
+  difficultyTier: "medium",
+  execute: replayAttacks[4].execute,
+});
+
 // Category 2: Bond Capacity
 register({
   id: "2.1",
