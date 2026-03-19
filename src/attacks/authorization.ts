@@ -3,7 +3,7 @@
 import { generateKeyPairSync, randomUUID } from "node:crypto";
 import type { AttackResult } from "../log";
 import { signRequest } from "../agentgate-client";
-import type { AttackScenario, AttackClient } from "./replay";
+import type { AttackScenario, AttackClient, AttackParams } from "./replay";
 
 const CATEGORY = "Authorization Boundaries";
 
@@ -76,8 +76,9 @@ async function registerIdentity(
 // Attack 4.1: Admin endpoint without admin key
 // ---------------------------------------------------------------------------
 
-async function attack4_1(client: AttackClient): Promise<AttackResult> {
-  const apiPath = "/admin/ban-identity";
+async function attack4_1(client: AttackClient, params?: AttackParams): Promise<AttackResult> {
+  const adminEndpoint = (typeof params?.admin_endpoint === "string" ? params.admin_endpoint : "/admin/ban-identity");
+  const apiPath = adminEndpoint;
   const body = { identityId: client.identityId, reason: "auth-test-4.1" };
 
   // Send with the regular REST key, not the admin key
@@ -113,8 +114,8 @@ async function attack4_1(client: AttackClient): Promise<AttackResult> {
     actualOutcome: `${response.status} ${JSON.stringify(data)}`,
     caught,
     details: caught
-      ? `AgentGate rejected the non-admin request to /admin/ban-identity (${response.status}).`
-      : `AgentGate accepted a request to an admin endpoint using a regular REST key — admin access control may be missing.`,
+      ? `AgentGate rejected the non-admin request to ${adminEndpoint} (${response.status}).`
+      : `AgentGate accepted a request to ${adminEndpoint} using a regular REST key — admin access control may be missing.`,
   };
 }
 
@@ -122,7 +123,8 @@ async function attack4_1(client: AttackClient): Promise<AttackResult> {
 // Attack 4.2: Resolve another identity's action
 // ---------------------------------------------------------------------------
 
-async function attack4_2(client: AttackClient): Promise<AttackResult> {
+async function attack4_2(client: AttackClient, params?: AttackParams): Promise<AttackResult> {
+  const crossAction = (typeof params?.cross_action === "string" ? params.cross_action as "resolve" | "execute" : "resolve");
   // Identity A is the client's identity — lock a bond and execute an action
   const bondResult = await signedPost(
     client.agentGateUrl, client.apiKey,
@@ -183,25 +185,25 @@ async function attack4_2(client: AttackClient): Promise<AttackResult> {
   const keysB = freshKeypair();
   await registerIdentity(client.agentGateUrl, client.apiKey, keysB.publicKey, keysB.privateKey);
 
-  // Identity B tries to resolve identity A's action
-  const resolveResult = await signedPost(
+  // Identity B tries to act on identity A's action
+  const crossResult = await signedPost(
     client.agentGateUrl, client.apiKey,
     keysB.publicKey, keysB.privateKey,
     `/v1/actions/${actionId}/resolve`,
     { outcome: "failed" },
   );
 
-  const caught = resolveResult.status >= 400;
+  const caught = crossResult.status >= 400;
   return {
     scenarioId: "4.2",
     scenarioName: "Resolve another identity's action",
     category: CATEGORY,
-    expectedOutcome: "Rejected — identity B cannot resolve identity A's action",
-    actualOutcome: `${resolveResult.status} ${JSON.stringify(resolveResult.data)}`,
+    expectedOutcome: `Rejected — identity B cannot ${crossAction} identity A's action`,
+    actualOutcome: `${crossResult.status} ${JSON.stringify(crossResult.data)}`,
     caught,
     details: caught
-      ? `AgentGate rejected identity B's attempt to resolve identity A's action (${resolveResult.status}).`
-      : `AgentGate allowed identity B to resolve identity A's action — cross-identity authorization may be missing.`,
+      ? `AgentGate rejected identity B's attempt to ${crossAction} identity A's action (${crossResult.status}).`
+      : `AgentGate allowed identity B to ${crossAction} identity A's action — cross-identity authorization may be missing.`,
   };
 }
 
@@ -216,7 +218,7 @@ export const authorizationAttacks: AttackScenario[] = [
     category: CATEGORY,
     description: "Access /admin/ban-identity with a regular REST key instead of admin key",
     expectedOutcome: "rejected with 401 or 403",
-    execute: attack4_1,
+    execute: (client, params?) => attack4_1(client, params),
   },
   {
     id: "4.2",
@@ -224,6 +226,6 @@ export const authorizationAttacks: AttackScenario[] = [
     category: CATEGORY,
     description: "Identity B tries to resolve an action belonging to identity A",
     expectedOutcome: "rejected — cross-identity resolution not allowed",
-    execute: attack4_2,
+    execute: (client, params?) => attack4_2(client, params),
   },
 ];
