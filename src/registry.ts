@@ -13,6 +13,7 @@ import { protocolAttacks } from "./attacks/protocol";
 import { mcpAttacks } from "./attacks/mcp";
 import { marketAttacks } from "./attacks/market";
 import { economicAttacks } from "./attacks/economic";
+import { reconAttacks } from "./attacks/recon";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -514,6 +515,27 @@ register({
   defenseTargeted: "Resource exhaustion protection",
   difficultyTier: "medium",
   execute: economicAttacks[2].execute,
+});
+
+// Category 12: Recon & Side-Channel
+register({
+  id: "12.1",
+  name: "Unauthenticated endpoint data mapping",
+  category: "Recon & Side-Channel",
+  description: "Probe common endpoints without auth to catalog exposed data",
+  defenseTargeted: "Endpoint authentication coverage",
+  difficultyTier: "low",
+  execute: reconAttacks[0].execute,
+});
+
+register({
+  id: "12.2",
+  name: "XSS payload in action data",
+  category: "Recon & Side-Channel",
+  description: "Store XSS payloads in action data, check dashboard for escaping",
+  defenseTargeted: "Dashboard escapeHtml on DB-backed values",
+  difficultyTier: "medium",
+  execute: reconAttacks[1].execute,
 });
 
 // ---------------------------------------------------------------------------
