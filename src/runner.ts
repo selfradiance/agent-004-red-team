@@ -1,44 +1,116 @@
-// Runs all attack scenarios against a live AgentGate instance
+// Runs attack scenarios against a live AgentGate instance — supports both
+// static (all attacks in order) and adaptive (strategist-selected) modes
 
-import { AttackLog } from "./log";
-import type { AttackClient, AttackScenario } from "./attacks/replay";
-import { replayAttacks } from "./attacks/replay";
-import { bondCapacityAttacks } from "./attacks/bond-capacity";
-import { signatureAttacks } from "./attacks/signature";
-import { authorizationAttacks } from "./attacks/authorization";
-import { inputValidationAttacks } from "./attacks/input-validation";
-import { rateLimitAttacks } from "./attacks/rate-limit";
-import { timingAttacks } from "./attacks/timing";
-import { protocolAttacks } from "./attacks/protocol";
-import { mcpAttacks } from "./attacks/mcp";
-import { marketAttacks } from "./attacks/market";
-import { economicAttacks } from "./attacks/economic";
-import { reconAttacks } from "./attacks/recon";
+import type { AttackResult } from "./log";
+import type { AttackClient } from "./attacks/replay";
+import type { AttackPick } from "./strategist";
+import { getAllScenarios, getScenario } from "./registry";
 
-const allScenarios: AttackScenario[] = [
-  ...replayAttacks,
-  ...bondCapacityAttacks,
-  ...signatureAttacks,
-  ...authorizationAttacks,
-  ...inputValidationAttacks,
-  ...rateLimitAttacks,
-  ...timingAttacks,
-  ...protocolAttacks,
-  ...mcpAttacks,
-  ...marketAttacks,
-  ...economicAttacks,
-  ...reconAttacks,
-];
+// ---------------------------------------------------------------------------
+// Numeric-aware sort for scenario IDs like "1.1", "2.3", "10.1"
+// ---------------------------------------------------------------------------
 
-export async function runAttacks(client: AttackClient): Promise<AttackLog> {
-  const log = new AttackLog();
+function sortScenarioIds(ids: string[]): string[] {
+  return [...ids].sort((a, b) => {
+    const [aCat, aNum] = a.split(".").map(Number);
+    const [bCat, bNum] = b.split(".").map(Number);
+    if (aCat !== bCat) return aCat - bCat;
+    return aNum - bNum;
+  });
+}
 
-  for (const scenario of allScenarios) {
-    console.log(`Running attack [${scenario.id}]: ${scenario.name}...`);
+// ---------------------------------------------------------------------------
+// Print helpers
+// ---------------------------------------------------------------------------
+
+export function printRoundHeader(round: number, totalRounds: number, strategy: string): void {
+  console.log("");
+  console.log("═══════════════════════════════════════════");
+  console.log(`  ROUND ${round} of ${totalRounds}`);
+  console.log(`  Strategy: ${strategy}`);
+  console.log("═══════════════════════════════════════════");
+  console.log("");
+}
+
+export function printRoundSummary(round: number, results: AttackResult[]): void {
+  const caught = results.filter((r) => r.caught).length;
+  const uncaught = results.filter((r) => !r.caught).length;
+  console.log("");
+  console.log("───────────────────────────────────────────");
+  console.log(`  Round ${round} complete: ${results.length} attacks, ${caught} caught, ${uncaught} uncaught`);
+  console.log("───────────────────────────────────────────");
+}
+
+// ---------------------------------------------------------------------------
+// Mode 1: Run specific attacks by ID (for adaptive rounds)
+// ---------------------------------------------------------------------------
+
+export async function runSelectedAttacks(
+  picks: AttackPick[],
+  client: AttackClient,
+  round: number,
+): Promise<AttackResult[]> {
+  const results: AttackResult[] = [];
+
+  for (const pick of picks) {
+    const entry = getScenario(pick.id);
+
+    if (!entry) {
+      const result: AttackResult = {
+        scenarioId: pick.id,
+        scenarioName: "UNKNOWN",
+        category: "UNKNOWN",
+        expectedOutcome: "N/A",
+        actualOutcome: "UNKNOWN — scenario ID not found in registry",
+        caught: false,
+        details: `Scenario ${pick.id} not found in registry. The strategist may have returned an invalid ID.`,
+      };
+      results.push(result);
+      console.log(`  [${pick.id}] UNKNOWN — NOT FOUND in registry`);
+      continue;
+    }
 
     try {
-      const result = await scenario.execute(client);
-      log.record(result);
+      const result = await (entry.execute as (client: AttackClient, params?: Record<string, unknown>) => Promise<AttackResult>)(client, pick.params);
+      results.push(result);
+
+      const status = result.caught ? "CAUGHT" : "UNCAUGHT ⚠️";
+      console.log(`  [${pick.id}] ${entry.name} → ${status}`);
+    } catch (err) {
+      const result: AttackResult = {
+        scenarioId: pick.id,
+        scenarioName: entry.name,
+        category: entry.category,
+        expectedOutcome: entry.description,
+        actualOutcome: `Error: ${err instanceof Error ? err.message : String(err)}`,
+        caught: false,
+        details: `Attack threw an unexpected error: ${err instanceof Error ? err.message : String(err)}`,
+      };
+      results.push(result);
+      console.log(`  [${pick.id}] ${entry.name} → [ERROR] ${result.actualOutcome}`);
+    }
+  }
+
+  return results;
+}
+
+// ---------------------------------------------------------------------------
+// Mode 2: Run all attacks in fixed order (for --static mode)
+// ---------------------------------------------------------------------------
+
+export async function runAllAttacksStatic(client: AttackClient): Promise<AttackResult[]> {
+  const scenarios = getAllScenarios();
+  const sortedIds = sortScenarioIds(scenarios.map((s) => s.id));
+
+  const results: AttackResult[] = [];
+
+  for (const id of sortedIds) {
+    const entry = getScenario(id)!;
+    console.log(`Running attack [${id}]: ${entry.name}...`);
+
+    try {
+      const result = await (entry.execute as (client: AttackClient, params?: Record<string, unknown>) => Promise<AttackResult>)(client);
+      results.push(result);
 
       if (result.caught) {
         console.log("  → [CAUGHT]");
@@ -46,19 +118,19 @@ export async function runAttacks(client: AttackClient): Promise<AttackLog> {
         console.log("  → [UNCAUGHT] ⚠️");
       }
     } catch (err) {
-      const result = {
-        scenarioId: scenario.id,
-        scenarioName: scenario.name,
-        category: scenario.category,
-        expectedOutcome: scenario.expectedOutcome,
+      const result: AttackResult = {
+        scenarioId: id,
+        scenarioName: entry.name,
+        category: entry.category,
+        expectedOutcome: entry.description,
         actualOutcome: `Error: ${err instanceof Error ? err.message : String(err)}`,
         caught: false,
         details: `Attack threw an unexpected error: ${err instanceof Error ? err.message : String(err)}`,
       };
-      log.record(result);
+      results.push(result);
       console.log(`  → [ERROR] ${result.actualOutcome}`);
     }
   }
 
-  return log;
+  return results;
 }
