@@ -4,6 +4,7 @@ import { generateKeyPairSync, randomUUID } from "node:crypto";
 import type { AttackResult } from "../log";
 import { signRequest } from "../agentgate-client";
 import type { AttackScenario, AttackClient, AttackParams } from "./replay";
+import { getReputation } from "../side-effects";
 
 const CATEGORY = "Economic & Reputation";
 
@@ -80,6 +81,9 @@ async function attack11_1(client: AttackClient, params?: AttackParams): Promise<
 
   const identityId = idResult.data.identityId as string;
 
+  // Get reputation before pumping
+  const reputationBefore = await getReputation(client.agentGateUrl, identityId);
+
   // Pump: lock tiny bonds, execute, resolve as success
   let successCount = 0;
   for (let i = 0; i < pumpCount; i++) {
@@ -122,6 +126,12 @@ async function attack11_1(client: AttackClient, params?: AttackParams): Promise<
 
   const highBondAccepted = highBondResult.status < 300;
 
+  // Get reputation after pumping
+  const reputationAfter = await getReputation(client.agentGateUrl, identityId);
+  const reputationDelta = (reputationBefore !== null && reputationAfter !== null)
+    ? reputationAfter - reputationBefore
+    : undefined;
+
   return {
     scenarioId: "11.1",
     scenarioName: "Reputation pumping",
@@ -132,6 +142,12 @@ async function attack11_1(client: AttackClient, params?: AttackParams): Promise<
     details: highBondAccepted
       ? `After ${successCount} cheap successes (${bondAmountCents}¢ each), a 1000¢ bond was accepted. Reputation pumping is possible — AgentGate doesn't weight bond amounts in reputation scoring.`
       : `After ${successCount} cheap successes, the 1000¢ bond was rejected (${highBondResult.status}). AgentGate may have reputation-based bond limits.`,
+    sideEffects: {
+      reputationBefore: reputationBefore ?? undefined,
+      reputationAfter: reputationAfter ?? undefined,
+      reputationDelta,
+      additionalNotes: `${successCount} pump cycles completed with ${bondAmountCents}¢ bonds`,
+    },
   };
 }
 
