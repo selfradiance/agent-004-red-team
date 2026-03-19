@@ -61,7 +61,7 @@ describe.skipIf(!process.env.AGENTGATE_REST_KEY || process.env.AGENTGATE_REST_KE
       };
     });
 
-    it("all attacks are caught by AgentGate", { timeout: 60000 }, async () => {
+    it("all attacks are caught by AgentGate", { timeout: 120000 }, async () => {
       const log = await runAttacks(client);
       const results = log.getResults();
 

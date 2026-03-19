@@ -336,6 +336,26 @@ register({
   execute: rateLimitAttacks[0].execute,
 });
 
+register({
+  id: "6.2",
+  name: "Sybil rate-limit bypass",
+  category: "Rate Limiting",
+  description: "Create N identities, burst executes from each, all under per-identity limit",
+  defenseTargeted: "Aggregate rate limiting across identities",
+  difficultyTier: "high",
+  execute: rateLimitAttacks[1].execute,
+});
+
+register({
+  id: "6.3",
+  name: "Bucket expiry and re-burst",
+  category: "Rate Limiting",
+  description: "Hit rate limit, wait for bucket expiry, burst again",
+  defenseTargeted: "Rate limit bucket cleanup",
+  difficultyTier: "medium",
+  execute: rateLimitAttacks[2].execute,
+});
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
