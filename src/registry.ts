@@ -1,0 +1,213 @@
+// Attack registry — maps scenario IDs to metadata and execute functions
+
+import type { AttackResult } from "./log";
+import type { AttackClient } from "./attacks/replay";
+import { replayAttacks } from "./attacks/replay";
+import { bondCapacityAttacks } from "./attacks/bond-capacity";
+import { signatureAttacks } from "./attacks/signature";
+import { authorizationAttacks } from "./attacks/authorization";
+import { inputValidationAttacks } from "./attacks/input-validation";
+import { rateLimitAttacks } from "./attacks/rate-limit";
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export interface RegistryEntry {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  defenseTargeted: string;
+  difficultyTier: "low" | "medium" | "high";
+  execute: (client: AttackClient) => Promise<AttackResult>;
+}
+
+// ---------------------------------------------------------------------------
+// Registry
+// ---------------------------------------------------------------------------
+
+const registry = new Map<string, RegistryEntry>();
+
+function register(entry: RegistryEntry): void {
+  if (registry.has(entry.id)) {
+    throw new Error(`Duplicate registry entry: ${entry.id}`);
+  }
+  registry.set(entry.id, entry);
+}
+
+// ---------------------------------------------------------------------------
+// Register existing Stage 1 scenarios (15 total)
+// ---------------------------------------------------------------------------
+
+// Category 1: Replay Attacks
+register({
+  id: "1.1",
+  name: "Exact duplicate request",
+  category: "Replay Attacks",
+  description: "Replay an identical signed request with the same nonce",
+  defenseTargeted: "Nonce deduplication",
+  difficultyTier: "low",
+  execute: replayAttacks[0].execute,
+});
+
+register({
+  id: "1.2",
+  name: "Same signature, fresh nonce",
+  category: "Replay Attacks",
+  description: "Send a request with a fresh nonce but reuse the old signature",
+  defenseTargeted: "Signature-nonce binding",
+  difficultyTier: "low",
+  execute: replayAttacks[1].execute,
+});
+
+register({
+  id: "1.3",
+  name: "Expired timestamp",
+  category: "Replay Attacks",
+  description: "Send a signed request with a timestamp 120 seconds in the past",
+  defenseTargeted: "Timestamp staleness check",
+  difficultyTier: "low",
+  execute: replayAttacks[2].execute,
+});
+
+// Category 2: Bond Capacity
+register({
+  id: "2.1",
+  name: "Over-commit exposure",
+  category: "Bond Capacity",
+  description: "Execute an action with exposure exceeding bond capacity (1.2x multiplier)",
+  defenseTargeted: "Bond capacity enforcement",
+  difficultyTier: "low",
+  execute: bondCapacityAttacks[0].execute,
+});
+
+register({
+  id: "2.2",
+  name: "Double-resolve",
+  category: "Bond Capacity",
+  description: "Resolve an already-resolved action a second time",
+  defenseTargeted: "Action state machine",
+  difficultyTier: "low",
+  execute: bondCapacityAttacks[1].execute,
+});
+
+register({
+  id: "2.3",
+  name: "Act on expired bond",
+  category: "Bond Capacity",
+  description: "Execute an action against a bond after its TTL has expired",
+  defenseTargeted: "Bond TTL enforcement",
+  difficultyTier: "medium",
+  execute: bondCapacityAttacks[2].execute,
+});
+
+// Category 3: Signature Tampering
+register({
+  id: "3.1",
+  name: "Wrong private key",
+  category: "Signature Tampering",
+  description: "Sign a request with a different keypair than the registered identity",
+  defenseTargeted: "Ed25519 signature verification",
+  difficultyTier: "low",
+  execute: signatureAttacks[0].execute,
+});
+
+register({
+  id: "3.2",
+  name: "Malformed signature",
+  category: "Signature Tampering",
+  description: "Send a request with a garbage signature string",
+  defenseTargeted: "Signature format validation",
+  difficultyTier: "low",
+  execute: signatureAttacks[1].execute,
+});
+
+register({
+  id: "3.3",
+  name: "Missing signature headers",
+  category: "Signature Tampering",
+  description: "Send a request with no signature, timestamp, or nonce headers",
+  defenseTargeted: "Required header validation",
+  difficultyTier: "low",
+  execute: signatureAttacks[2].execute,
+});
+
+// Category 4: Authorization Boundaries
+register({
+  id: "4.1",
+  name: "Admin endpoint without admin key",
+  category: "Authorization Boundaries",
+  description: "Access /admin/ban-identity with a regular REST key instead of admin key",
+  defenseTargeted: "Admin key separation",
+  difficultyTier: "low",
+  execute: authorizationAttacks[0].execute,
+});
+
+register({
+  id: "4.2",
+  name: "Resolve another identity's action",
+  category: "Authorization Boundaries",
+  description: "Identity B tries to resolve an action belonging to identity A",
+  defenseTargeted: "Cross-identity authorization",
+  difficultyTier: "medium",
+  execute: authorizationAttacks[1].execute,
+});
+
+// Category 5: Input Validation
+register({
+  id: "5.1",
+  name: "Oversized payload",
+  category: "Input Validation",
+  description: "Execute a bonded action with a payload string over 4096 bytes",
+  defenseTargeted: "Payload size limit",
+  difficultyTier: "low",
+  execute: inputValidationAttacks[0].execute,
+});
+
+register({
+  id: "5.2",
+  name: "TTL exceeding cap",
+  category: "Input Validation",
+  description: "Lock a bond with ttlSeconds = 100000 (exceeds 86400s cap)",
+  defenseTargeted: "TTL maximum validation",
+  difficultyTier: "low",
+  execute: inputValidationAttacks[1].execute,
+});
+
+register({
+  id: "5.3",
+  name: "Negative bond amount",
+  category: "Input Validation",
+  description: "Lock a bond with amountCents = -100",
+  defenseTargeted: "Numeric range validation",
+  difficultyTier: "low",
+  execute: inputValidationAttacks[2].execute,
+});
+
+// Category 6: Rate Limiting
+register({
+  id: "6.1",
+  name: "Exceed execution rate limit",
+  category: "Rate Limiting",
+  description: "Fire 11 execute requests in rapid succession from one identity (limit is 10/60s)",
+  defenseTargeted: "Per-identity rate limiter",
+  difficultyTier: "medium",
+  execute: rateLimitAttacks[0].execute,
+});
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+export function getScenario(id: string): RegistryEntry | undefined {
+  return registry.get(id);
+}
+
+export function getAllScenarioIds(): string[] {
+  return Array.from(registry.keys());
+}
+
+export function getAllScenarios(): RegistryEntry[] {
+  return Array.from(registry.values());
+}

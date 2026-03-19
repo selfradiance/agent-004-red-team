@@ -4,13 +4,17 @@ import { randomUUID } from "node:crypto";
 import type { AttackResult } from "../log";
 import { signRequest, type AgentKeys } from "../agentgate-client";
 
+export interface AttackParams {
+  [key: string]: unknown;
+}
+
 export interface AttackScenario {
   id: string;
   name: string;
   category: string;
   description: string;
   expectedOutcome: string;
-  execute: (client: AttackClient) => Promise<AttackResult>;
+  execute: (client: AttackClient, params?: AttackParams) => Promise<AttackResult>;
 }
 
 export interface AttackClient {
@@ -67,7 +71,8 @@ function buildSignedRequest(client: AttackClient, apiPath: string, body: unknown
 // Attack 1.1: Exact duplicate request
 // ---------------------------------------------------------------------------
 
-async function attack1_1(client: AttackClient): Promise<AttackResult> {
+async function attack1_1(client: AttackClient, params?: AttackParams): Promise<AttackResult> {
+  const replayCount = (typeof params?.replay_count === "number" ? params.replay_count : 1);
   const apiPath = "/v1/bonds/lock";
   const body = {
     identityId: client.identityId,
@@ -93,20 +98,29 @@ async function attack1_1(client: AttackClient): Promise<AttackResult> {
     };
   }
 
-  // Second request — exact same nonce, timestamp, signature, body
-  const second = await rawPost(client, apiPath, body, req);
+  // Send duplicate(s) — exact same nonce, timestamp, signature, body
+  let lastStatus = 0;
+  let lastData: Record<string, unknown> = {};
+  let allRejected = true;
 
-  const caught = second.status === 409;
+  for (let i = 0; i < replayCount; i++) {
+    const dup = await rawPost(client, apiPath, body, req);
+    lastStatus = dup.status;
+    lastData = dup.data;
+    if (dup.status !== 409) allRejected = false;
+  }
+
+  const caught = allRejected;
   return {
     scenarioId: "1.1",
     scenarioName: "Exact duplicate request",
     category: CATEGORY,
     expectedOutcome: "Duplicate rejected with 409 DUPLICATE_NONCE",
-    actualOutcome: `${second.status} ${JSON.stringify(second.data)}`,
+    actualOutcome: `${lastStatus} ${JSON.stringify(lastData)} (${replayCount} duplicate(s) sent)`,
     caught,
     details: caught
-      ? "AgentGate correctly rejected the duplicate nonce."
-      : `AgentGate accepted the duplicate request with status ${second.status} — replay protection may be missing.`,
+      ? `AgentGate correctly rejected ${replayCount} duplicate nonce(s).`
+      : `AgentGate accepted a duplicate request with status ${lastStatus} — replay protection may be missing.`,
   };
 }
 
@@ -114,7 +128,7 @@ async function attack1_1(client: AttackClient): Promise<AttackResult> {
 // Attack 1.2: Same signature, fresh nonce
 // ---------------------------------------------------------------------------
 
-async function attack1_2(client: AttackClient): Promise<AttackResult> {
+async function attack1_2(client: AttackClient, _params?: AttackParams): Promise<AttackResult> {
   const apiPath = "/v1/bonds/lock";
   const body = {
     identityId: client.identityId,
@@ -155,7 +169,9 @@ async function attack1_2(client: AttackClient): Promise<AttackResult> {
 // Attack 1.3: Expired timestamp
 // ---------------------------------------------------------------------------
 
-async function attack1_3(client: AttackClient): Promise<AttackResult> {
+async function attack1_3(client: AttackClient, params?: AttackParams): Promise<AttackResult> {
+  const timestampAgeSeconds = (typeof params?.timestamp_age_seconds === "number" ? params.timestamp_age_seconds : 120);
+
   const apiPath = "/v1/bonds/lock";
   const body = {
     identityId: client.identityId,
@@ -165,8 +181,8 @@ async function attack1_3(client: AttackClient): Promise<AttackResult> {
     reason: "replay-test-1.3",
   };
 
-  // Timestamp 120 seconds in the past (well outside 60s window)
-  const staleTimestamp = (Date.now() - 120_000).toString();
+  // Timestamp N seconds in the past
+  const staleTimestamp = (Date.now() - timestampAgeSeconds * 1000).toString();
   const req = buildSignedRequest(client, apiPath, body, { timestamp: staleTimestamp });
 
   const result = await rawPost(client, apiPath, body, req);
@@ -176,12 +192,12 @@ async function attack1_3(client: AttackClient): Promise<AttackResult> {
     scenarioId: "1.3",
     scenarioName: "Expired timestamp",
     category: CATEGORY,
-    expectedOutcome: "Rejected — timestamp 120s in the past exceeds the allowed window",
+    expectedOutcome: `Rejected — timestamp ${timestampAgeSeconds}s in the past exceeds the allowed window`,
     actualOutcome: `${result.status} ${JSON.stringify(result.data)}`,
     caught,
     details: caught
-      ? `AgentGate rejected the stale timestamp (${result.status}).`
-      : `AgentGate accepted a request with a 120-second-old timestamp — replay window may be too large or timestamp validation is missing.`,
+      ? `AgentGate rejected the stale timestamp at ${timestampAgeSeconds}s age (${result.status}).`
+      : `AgentGate accepted a request with a ${timestampAgeSeconds}-second-old timestamp — replay window may be too large or timestamp validation is missing.`,
   };
 }
 
@@ -196,7 +212,7 @@ export const replayAttacks: AttackScenario[] = [
     category: CATEGORY,
     description: "Replay an identical signed request with the same nonce",
     expectedOutcome: "rejected with 409 DUPLICATE_NONCE",
-    execute: attack1_1,
+    execute: (client, params?) => attack1_1(client, params),
   },
   {
     id: "1.2",
@@ -204,7 +220,7 @@ export const replayAttacks: AttackScenario[] = [
     category: CATEGORY,
     description: "Send a request with a fresh nonce but reuse the old signature",
     expectedOutcome: "rejected — signature mismatch",
-    execute: attack1_2,
+    execute: (client, params?) => attack1_2(client, params),
   },
   {
     id: "1.3",
@@ -212,6 +228,6 @@ export const replayAttacks: AttackScenario[] = [
     category: CATEGORY,
     description: "Send a signed request with a timestamp 120 seconds in the past",
     expectedOutcome: "rejected — stale timestamp",
-    execute: attack1_3,
+    execute: (client, params?) => attack1_3(client, params),
   },
 ];
