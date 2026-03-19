@@ -3,7 +3,7 @@
 import { randomUUID } from "node:crypto";
 import type { AttackResult } from "../log";
 import { signRequest } from "../agentgate-client";
-import type { AttackScenario, AttackClient } from "./replay";
+import type { AttackScenario, AttackClient, AttackParams } from "./replay";
 
 const CATEGORY = "Input Validation";
 
@@ -46,7 +46,9 @@ async function signedPost(
 // Attack 5.1: Oversized payload
 // ---------------------------------------------------------------------------
 
-async function attack5_1(client: AttackClient): Promise<AttackResult> {
+async function attack5_1(client: AttackClient, params?: AttackParams): Promise<AttackResult> {
+  const payloadBytes = (typeof params?.payload_bytes === "number" ? params.payload_bytes : 5000);
+
   // Lock a bond first
   const bondResult = await signedPost(client, "/v1/bonds/lock", {
     identityId: client.identityId,
@@ -71,8 +73,7 @@ async function attack5_1(client: AttackClient): Promise<AttackResult> {
   const bondId = bondResult.data.bondId as string;
   const exposureCents = Math.floor(100 / 1.2);
 
-  // Build a payload string longer than 4096 bytes
-  const oversizedPayload = "X".repeat(5000);
+  const oversizedPayload = "X".repeat(payloadBytes);
 
   const actionResult = await signedPost(client, "/v1/actions/execute", {
     identityId: client.identityId,
@@ -87,12 +88,12 @@ async function attack5_1(client: AttackClient): Promise<AttackResult> {
     scenarioId: "5.1",
     scenarioName: "Oversized payload",
     category: CATEGORY,
-    expectedOutcome: "Rejected with 400 PAYLOAD_TOO_LARGE",
+    expectedOutcome: `Rejected with 400 PAYLOAD_TOO_LARGE (${payloadBytes} bytes)`,
     actualOutcome: `${actionResult.status} ${JSON.stringify(actionResult.data)}`,
     caught,
     details: caught
-      ? `AgentGate rejected the oversized payload (${actionResult.status}).`
-      : `AgentGate accepted a payload over 4096 bytes — payload size validation may be missing.`,
+      ? `AgentGate rejected the ${payloadBytes}-byte payload (${actionResult.status}).`
+      : `AgentGate accepted a ${payloadBytes}-byte payload — payload size validation may be missing.`,
   };
 }
 
@@ -100,12 +101,14 @@ async function attack5_1(client: AttackClient): Promise<AttackResult> {
 // Attack 5.2: TTL exceeding cap
 // ---------------------------------------------------------------------------
 
-async function attack5_2(client: AttackClient): Promise<AttackResult> {
+async function attack5_2(client: AttackClient, params?: AttackParams): Promise<AttackResult> {
+  const ttlSeconds = (typeof params?.ttl_seconds === "number" ? params.ttl_seconds : 100000);
+
   const result = await signedPost(client, "/v1/bonds/lock", {
     identityId: client.identityId,
     amountCents: 100,
     currency: "USD",
-    ttlSeconds: 100000,
+    ttlSeconds,
     reason: "input-validation-test-5.2",
   });
 
@@ -114,12 +117,12 @@ async function attack5_2(client: AttackClient): Promise<AttackResult> {
     scenarioId: "5.2",
     scenarioName: "TTL exceeding cap",
     category: CATEGORY,
-    expectedOutcome: "Rejected with 400 TTL_TOO_LONG",
+    expectedOutcome: `Rejected with 400 TTL_TOO_LONG (ttl=${ttlSeconds}s)`,
     actualOutcome: `${result.status} ${JSON.stringify(result.data)}`,
     caught,
     details: caught
-      ? `AgentGate rejected the excessive TTL (${result.status}).`
-      : `AgentGate accepted a TTL of 100000 seconds — TTL cap validation may be missing.`,
+      ? `AgentGate rejected TTL of ${ttlSeconds}s (${result.status}).`
+      : `AgentGate accepted a TTL of ${ttlSeconds} seconds — TTL cap validation may be missing.`,
   };
 }
 
@@ -127,10 +130,12 @@ async function attack5_2(client: AttackClient): Promise<AttackResult> {
 // Attack 5.3: Negative bond amount
 // ---------------------------------------------------------------------------
 
-async function attack5_3(client: AttackClient): Promise<AttackResult> {
+async function attack5_3(client: AttackClient, params?: AttackParams): Promise<AttackResult> {
+  const amountCents = (typeof params?.amount_cents === "number" ? params.amount_cents : -100);
+
   const result = await signedPost(client, "/v1/bonds/lock", {
     identityId: client.identityId,
-    amountCents: -100,
+    amountCents,
     currency: "USD",
     ttlSeconds: 300,
     reason: "input-validation-test-5.3",
@@ -141,12 +146,12 @@ async function attack5_3(client: AttackClient): Promise<AttackResult> {
     scenarioId: "5.3",
     scenarioName: "Negative bond amount",
     category: CATEGORY,
-    expectedOutcome: "Rejected — negative amount is invalid",
+    expectedOutcome: `Rejected — ${amountCents} cents is invalid`,
     actualOutcome: `${result.status} ${JSON.stringify(result.data)}`,
     caught,
     details: caught
-      ? `AgentGate rejected the negative bond amount (${result.status}).`
-      : `AgentGate accepted a bond with -100 cents — negative amount validation may be missing.`,
+      ? `AgentGate rejected the bond amount of ${amountCents} cents (${result.status}).`
+      : `AgentGate accepted a bond with ${amountCents} cents — amount validation may be missing.`,
   };
 }
 
@@ -161,7 +166,7 @@ export const inputValidationAttacks: AttackScenario[] = [
     category: CATEGORY,
     description: "Execute a bonded action with a payload string over 4096 bytes",
     expectedOutcome: "rejected with 400 PAYLOAD_TOO_LARGE",
-    execute: attack5_1,
+    execute: (client, params?) => attack5_1(client, params),
   },
   {
     id: "5.2",
@@ -169,7 +174,7 @@ export const inputValidationAttacks: AttackScenario[] = [
     category: CATEGORY,
     description: "Lock a bond with ttlSeconds = 100000 (exceeds 86400s cap)",
     expectedOutcome: "rejected with 400 TTL_TOO_LONG",
-    execute: attack5_2,
+    execute: (client, params?) => attack5_2(client, params),
   },
   {
     id: "5.3",
@@ -177,6 +182,6 @@ export const inputValidationAttacks: AttackScenario[] = [
     category: CATEGORY,
     description: "Lock a bond with amountCents = -100",
     expectedOutcome: "rejected — negative amount invalid",
-    execute: attack5_3,
+    execute: (client, params?) => attack5_3(client, params),
   },
 ];
