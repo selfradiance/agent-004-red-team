@@ -1,0 +1,6 @@
+.env
+agent-identity*.json
+*_PROJECT_CONTEXT.md
+node_modules/
+dist/
+*.log

@@ -1,0 +1,9 @@
+{
+  "name": "agent-004-red-team",
+  "version": "0.0.1",
+  "description": "A bonded red team simulator that attacks live AgentGate infrastructure and reports findings",
+  "scripts": {},
+  "keywords": [],
+  "author": "",
+  "license": "MIT"
+}
