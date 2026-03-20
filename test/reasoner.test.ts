@@ -100,6 +100,21 @@ describe("reasoner — unit tests", () => {
     const result = parseReasonerResponse(json);
     expect(result.hypotheses[0].confidence).toBe("low"); // defaults to "low" for invalid values
   });
+
+  it("parses targetPersona from team-mode response", () => {
+    const json = JSON.stringify({
+      analysis: "Team analysis",
+      hypotheses: [
+        { id: "novel-1", description: "Bond boundary test", targetDefense: "Bond capacity", rationale: "Exploit rounding", confidence: "high", targetPersona: "whale" },
+        { id: "novel-2", description: "Timing probe", targetDefense: "Timestamp freshness", rationale: "Boundary check", confidence: "medium", targetPersona: "shadow" },
+        { id: "novel-3", description: "Protocol fuzz", targetDefense: "Input validation", rationale: "Edge case", confidence: "low" },
+      ],
+    });
+    const result = parseReasonerResponse(json);
+    expect(result.hypotheses[0].targetPersona).toBe("whale");
+    expect(result.hypotheses[1].targetPersona).toBe("shadow");
+    expect(result.hypotheses[2].targetPersona).toBeUndefined();
+  });
 });
 
 describe.skipIf(!process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY.includes("your-"))(

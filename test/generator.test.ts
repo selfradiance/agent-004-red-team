@@ -2,7 +2,7 @@
 
 import "dotenv/config";
 import { describe, it, expect } from "vitest";
-import { validateAndCheck, stripFences, generateAttack } from "../src/generator";
+import { validateAndCheck, stripFences, generateAttack, type PersonaContext } from "../src/generator";
 import type { AttackHypothesis } from "../src/reasoner";
 
 const SAMPLE_HYPOTHESIS: AttackHypothesis = {
@@ -112,6 +112,32 @@ describe.skipIf(!process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY.
         expect(result.attack.code).toContain("async function novelAttack(toolkit)");
         expect(result.attack.validationResult.valid).toBe(true);
         expect(result.attack.hypothesis.id).toBe("novel-test");
+      }
+    });
+
+    it("generates valid attack code with persona context", { timeout: 30000 }, async () => {
+      const personaCtx: PersonaContext = {
+        name: "whale",
+        specialty: "Economic & Bond",
+        attackFamilies: [2, 6, 10, 11],
+        priorFinding: "Bond capacity boundary at 83 cents accepted, 84 cents rejected",
+        objective: "Test if multiple small bonds can be combined to exceed single-bond capacity limits",
+      };
+      const hypothesis: AttackHypothesis = {
+        id: "novel-persona-test",
+        description: "Lock multiple small bonds and combine their capacity for one large action",
+        targetDefense: "Bond capacity accounting across multiple bonds",
+        rationale: "Prior testing only checked single-bond capacity. Multi-bond aggregation might bypass individual limits.",
+        confidence: "medium",
+        targetPersona: "whale",
+      };
+
+      const result = await generateAttack(hypothesis, null, personaCtx);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.attack.code).toContain("async function novelAttack(toolkit)");
+        expect(result.attack.validationResult.valid).toBe(true);
       }
     });
   },

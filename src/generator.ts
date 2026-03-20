@@ -1,5 +1,6 @@
 // Generator — turns attack hypotheses into validated JavaScript attack functions.
 // Calls Claude API to generate code, validates it, retries once on failure.
+// In team mode, receives narrow persona context (name + families + one finding + objective).
 
 import Anthropic from "@anthropic-ai/sdk";
 import type { AttackHypothesis } from "./reasoner";
@@ -8,6 +9,14 @@ import { validateGeneratedCode, checkNovelty, type ValidationResult } from "./sa
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+
+export interface PersonaContext {
+  name: string;
+  specialty: string;
+  attackFamilies: number[];
+  priorFinding?: string;   // one compact finding from a prior round
+  objective?: string;       // one concrete objective for this attack
+}
 
 export interface GeneratedAttack {
   hypothesis: AttackHypothesis;
@@ -34,7 +43,7 @@ const SYSTEM_PROMPT = `You are a red team code generator. You write JavaScript a
 // Build user message
 // ---------------------------------------------------------------------------
 
-function buildUserMessage(hypothesis: AttackHypothesis, retryReason?: string): string {
+function buildUserMessage(hypothesis: AttackHypothesis, retryReason?: string, personaCtx?: PersonaContext): string {
   const parts: string[] = [];
 
   if (retryReason) {
@@ -42,6 +51,20 @@ function buildUserMessage(hypothesis: AttackHypothesis, retryReason?: string): s
     parts.push(`Reason: ${retryReason}`);
     parts.push("");
     parts.push("Please fix the issue and output ONLY the corrected function.");
+    parts.push("");
+  }
+
+  // Narrow persona context (team mode only)
+  if (personaCtx) {
+    parts.push(`You are generating an attack for persona "${personaCtx.name}" (${personaCtx.specialty}).`);
+    parts.push(`Allowed attack families: categories ${personaCtx.attackFamilies.join(", ")}`);
+    if (personaCtx.priorFinding) {
+      parts.push(`Prior finding to exploit: ${personaCtx.priorFinding}`);
+    }
+    if (personaCtx.objective) {
+      parts.push(`Concrete objective: ${personaCtx.objective}`);
+    }
+    parts.push(`The generated code will have access to toolkit.personaName === "${personaCtx.name}".`);
     parts.push("");
   }
 
@@ -135,6 +158,7 @@ export function stripFences(text: string): string {
 async function callGeneratorApi(
   hypothesis: AttackHypothesis,
   retryReason?: string,
+  personaCtx?: PersonaContext,
 ): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -150,7 +174,7 @@ async function callGeneratorApi(
     messages: [
       {
         role: "user",
-        content: buildUserMessage(hypothesis, retryReason),
+        content: buildUserMessage(hypothesis, retryReason, personaCtx),
       },
     ],
   });
@@ -170,16 +194,17 @@ async function callGeneratorApi(
 export async function generateAttack(
   hypothesis: AttackHypothesis,
   existingRegistry: Map<string, { name: string; description: string }> | null,
+  personaCtx?: PersonaContext,
 ): Promise<GenerationResult> {
   try {
     // First attempt
-    let code = await callGeneratorApi(hypothesis);
+    let code = await callGeneratorApi(hypothesis, undefined, personaCtx);
     let validation = validateGeneratedCode(code);
 
     // Retry once if validation fails
     if (!validation.valid) {
       try {
-        code = await callGeneratorApi(hypothesis, validation.reason);
+        code = await callGeneratorApi(hypothesis, validation.reason, personaCtx);
         validation = validateGeneratedCode(code);
       } catch (retryErr) {
         return {
