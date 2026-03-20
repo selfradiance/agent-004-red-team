@@ -65,7 +65,10 @@ function _toolkitCall(method, args) {
   });
 }
 
+// Mutable toolkit object — personaName will be set from execute message before freeze
 const toolkit = {
+  personaName: null, // set per-execution from parent message
+
   async signedPost(path, body) {
     return _toolkitCall("signedPost", [path, body]);
   },
@@ -126,12 +129,15 @@ const toolkit = {
   },
 };
 
-Object.freeze(toolkit);
+// NOTE: toolkit is NOT frozen here — personaName is set from the execute message.
+// It gets frozen after personaName is set, inside the execute handler below.
 
 // ---------------------------------------------------------------------------
 // Step 4: Listen for messages from parent via IPC
 // Handles both "execute" (code to run) and "toolkit-response/toolkit-error" (IPC responses)
 // ---------------------------------------------------------------------------
+
+let _toolkitFrozen = false;
 
 _on("message", async (msg) => {
   if (!msg || typeof msg !== "object") return;
@@ -157,6 +163,13 @@ _on("message", async (msg) => {
 
   // Handle execute command
   if (msg.type === "execute" && typeof msg.code === "string") {
+    // Set personaName from the message (if provided) and freeze toolkit
+    if (!_toolkitFrozen) {
+      toolkit.personaName = typeof msg.personaName === "string" ? msg.personaName : null;
+      Object.freeze(toolkit);
+      _toolkitFrozen = true;
+    }
+
     try {
       const fn = new _Function("toolkit", msg.code + "\nreturn novelAttack(toolkit);");
       const result = await fn(toolkit);

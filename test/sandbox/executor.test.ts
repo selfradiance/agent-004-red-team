@@ -65,4 +65,15 @@ describe("sandbox executor", () => {
     expect(result.success).toBe(true);
     expect(result.logs).toContain("hello from sandbox");
   });
+
+  it("passes personaName through to toolkit", { timeout: 15000 }, async () => {
+    const result = await executeInSandbox(
+      `async function novelAttack(toolkit) {
+        return { caught: true, reason: "persona: " + toolkit.personaName };
+      }`,
+      { personaName: "whale" },
+    );
+    expect(result.success).toBe(true);
+    expect(result.result?.reason).toBe("persona: whale");
+  });
 });

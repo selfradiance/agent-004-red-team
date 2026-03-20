@@ -28,6 +28,7 @@ export interface ExecutorOptions {
     privateKey: string;
   };
   restKey?: string;
+  personaName?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -169,7 +170,7 @@ export async function executeInSandbox(code: string, options?: ExecutorOptions):
       });
 
       // Step 6: Send the code to execute
-      child.send({ type: "execute", code });
+      child.send({ type: "execute", code, personaName: options?.personaName });
     });
 
     return result;

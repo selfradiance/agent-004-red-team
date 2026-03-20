@@ -6,7 +6,7 @@ import path from "node:path";
 
 const CHILD_RUNNER = path.resolve("src/sandbox/child-runner.js");
 
-function runInChild(code: string, timeoutMs = 10000): Promise<{ type: string; result?: unknown; error?: string; logs: string[] }> {
+function runInChild(code: string, timeoutMs = 10000, personaName?: string): Promise<{ type: string; result?: unknown; error?: string; logs: string[] }> {
   return new Promise((resolve, reject) => {
     const logs: string[] = [];
     let createCount = 0;
@@ -82,7 +82,7 @@ function runInChild(code: string, timeoutMs = 10000): Promise<{ type: string; re
       reject(new Error(`Child exited with code ${code} without sending a result`));
     });
 
-    child.send({ type: "execute", code });
+    child.send({ type: "execute", code, personaName });
   });
 }
 
@@ -147,6 +147,45 @@ describe("child-runner sandbox", () => {
         }
         return { caught: false, reason: "toolkit was modified" };
       }`,
+    );
+    expect(result.type).toBe("result");
+    expect(result.result).toHaveProperty("caught", true);
+  });
+
+  it("injects personaName into toolkit", async () => {
+    const result = await runInChild(
+      `async function novelAttack(toolkit) {
+        return { caught: true, reason: "persona is: " + toolkit.personaName };
+      }`,
+      10000,
+      "shadow",
+    );
+    expect(result.type).toBe("result");
+    expect(result.result).toHaveProperty("reason", "persona is: shadow");
+  });
+
+  it("personaName is null when not provided", async () => {
+    const result = await runInChild(
+      `async function novelAttack(toolkit) {
+        return { caught: true, reason: "persona is: " + toolkit.personaName };
+      }`,
+    );
+    expect(result.type).toBe("result");
+    expect(result.result).toHaveProperty("reason", "persona is: null");
+  });
+
+  it("personaName is read-only after freeze", async () => {
+    const result = await runInChild(
+      `async function novelAttack(toolkit) {
+        try {
+          toolkit.personaName = "hacked";
+        } catch (e) {
+          return { caught: true, reason: "frozen: " + e.message };
+        }
+        return { caught: toolkit.personaName === "shadow", reason: "name is " + toolkit.personaName };
+      }`,
+      10000,
+      "shadow",
     );
     expect(result.type).toBe("result");
     expect(result.result).toHaveProperty("caught", true);
