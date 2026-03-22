@@ -147,6 +147,8 @@ async function attack10_2(client: AttackClient, _params?: AttackParams): Promise
     category: CATEGORY,
     expectedOutcome: "Probing — market resolution uses REST key auth only (documented known limitation)",
     actualOutcome: `${resolveResult.status} ${JSON.stringify(resolveResult.data)}`,
+    // caught: true because this probes a documented known limitation, not a new vulnerability.
+    // The details text records whether the limitation is still present or has been fixed.
     caught: true,
     details: accepted
       ? `Market resolved with REST key auth only — any identity with the REST key can resolve any market. This is a documented known limitation.`
@@ -217,6 +219,8 @@ async function attack10_3(client: AttackClient, params?: AttackParams): Promise<
     category: CATEGORY,
     expectedOutcome: `Stress test — ${positionCount} positions from ${identityCount} identities`,
     actualOutcome: `${totalSucceeded} positions accepted, ${totalRejected} rejected`,
+    // caught: true because this is a stress test / probe, not a pass/fail vulnerability check.
+    // The details text records whether any spam protection was observed.
     caught: true,
     details: totalRejected > 0
       ? `AgentGate rejected ${totalRejected} of ${totalSucceeded + totalRejected} position attempts — some form of position limiting may be in place.`

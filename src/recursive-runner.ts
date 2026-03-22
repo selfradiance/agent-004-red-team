@@ -75,17 +75,20 @@ function sandboxToAttackResult(
     };
   }
 
-  // Sandbox error or timeout — treat as caught (attack failed, not AgentGate vulnerability)
+  // Sandbox error or timeout — treat as caught but mark inconclusive so reports
+  // clearly distinguish "AgentGate defended" from "attack failed to execute"
+  const inconclusiveReason = sandboxResult.timedOut
+    ? "[INCONCLUSIVE] Sandbox timeout after 15s — attack did not complete"
+    : `[INCONCLUSIVE] Sandbox crashed: ${sandboxResult.error || "Unknown sandbox error"}`;
+
   return {
     scenarioId: hypothesis.id,
     scenarioName: hypothesis.description,
     category: "Novel Attack",
     expectedOutcome: "Probing: " + hypothesis.targetDefense,
-    actualOutcome: sandboxResult.timedOut
-      ? "TIMEOUT: sandbox execution exceeded 15s"
-      : `ERROR: ${sandboxResult.error || "Unknown sandbox error"}`,
+    actualOutcome: inconclusiveReason,
     caught: true,
-    details: `Hypothesis: ${hypothesis.rationale}. Sandbox ${sandboxResult.timedOut ? "timed out" : "errored"}: ${sandboxResult.error || "unknown"}. Logs: ${sandboxResult.logs.join("; ")}`,
+    details: `Hypothesis: ${hypothesis.rationale}. ${inconclusiveReason}. Logs: ${sandboxResult.logs.join("; ")}`,
   };
 }
 

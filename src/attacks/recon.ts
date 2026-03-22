@@ -56,15 +56,21 @@ async function attack12_1(client: AttackClient, _params?: AttackParams): Promise
   const exposedEndpoints = results.filter((r) => r.status < 400 && r.hasData);
   const exposedSummary = exposedEndpoints.map((r) => `${r.endpoint} (${r.status}): ${r.fields.join(", ")}`).join("; ");
 
+  // Health endpoints exposing data without auth is expected and fine.
+  // Sensitive API endpoints (/v1/*) exposing data without auth is real information leakage.
+  const healthPaths = ["/health", "/healthz"];
+  const sensitiveExposed = exposedEndpoints.filter((r) => !healthPaths.includes(r.endpoint));
+
   return {
     scenarioId: "12.1",
     scenarioName: "Unauthenticated endpoint data mapping",
     category: CATEGORY,
     expectedOutcome: "Recon — catalog all data exposed without authentication",
-    actualOutcome: `${exposedEndpoints.length}/${endpoints.length} endpoints returned data without auth`,
-    caught: true,
+    actualOutcome: `${exposedEndpoints.length}/${endpoints.length} endpoints returned data without auth (${sensitiveExposed.length} sensitive)`,
+    // caught: false if sensitive API endpoints leak data without auth
+    caught: sensitiveExposed.length === 0,
     details: exposedEndpoints.length > 0
-      ? `Exposed endpoints: ${exposedSummary}`
+      ? `Exposed endpoints: ${exposedSummary}.${sensitiveExposed.length > 0 ? ` ${sensitiveExposed.length} sensitive endpoint(s) returned data without authentication — information exposure.` : " Only health endpoints exposed (expected)."}`
       : `No endpoints returned data without authentication — all ${endpoints.length} probed endpoints returned errors or empty responses.`,
   };
 }

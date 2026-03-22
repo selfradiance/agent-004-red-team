@@ -105,13 +105,13 @@ function loadIdentityIdFromFile(filePath: string): string | undefined {
 }
 
 function saveKeypairToFile(filePath: string, keys: AgentKeys): void {
-  fs.writeFileSync(filePath, JSON.stringify(keys, null, 2), "utf8");
+  fs.writeFileSync(filePath, JSON.stringify(keys, null, 2), { encoding: "utf8", mode: 0o600 });
 }
 
 function saveIdentityIdToFile(filePath: string, identityId: string): void {
   const data: SavedPersonaIdentity = JSON.parse(fs.readFileSync(filePath, "utf8"));
   data.identityId = identityId;
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf8");
+  fs.writeFileSync(filePath, JSON.stringify(data, null, 2), { encoding: "utf8", mode: 0o600 });
 }
 
 // ---------------------------------------------------------------------------

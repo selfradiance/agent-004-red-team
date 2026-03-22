@@ -86,7 +86,7 @@ export function loadOrCreateKeypair(): AgentKeys {
     privateKey: base64UrlToBase64(privateJwk.d),
   };
 
-  fs.writeFileSync(IDENTITY_FILE, JSON.stringify(keys, null, 2), "utf8");
+  fs.writeFileSync(IDENTITY_FILE, JSON.stringify(keys, null, 2), { encoding: "utf8", mode: 0o600 });
   return keys;
 }
 
@@ -99,7 +99,7 @@ export function getSavedIdentityId(): string | undefined {
 function saveIdentityId(identityId: string): void {
   const data: SavedIdentity = JSON.parse(fs.readFileSync(IDENTITY_FILE, "utf8"));
   data.identityId = identityId;
-  fs.writeFileSync(IDENTITY_FILE, JSON.stringify(data, null, 2), "utf8");
+  fs.writeFileSync(IDENTITY_FILE, JSON.stringify(data, null, 2), { encoding: "utf8", mode: 0o600 });
 }
 
 // ---------------------------------------------------------------------------

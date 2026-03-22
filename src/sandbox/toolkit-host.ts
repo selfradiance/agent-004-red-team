@@ -93,6 +93,21 @@ function validatePath(apiPath: string): void {
   }
 }
 
+function validateNoOriginEscape(apiPath: string): void {
+  if (apiPath.startsWith("//")) {
+    throw new Error("SSRF blocked: resolved URL escapes target origin");
+  }
+}
+
+function buildAndValidateUrl(apiPath: string, targetUrl: string): string {
+  const parsed = new URL(apiPath, targetUrl);
+  const expected = new URL(targetUrl);
+  if (parsed.origin !== expected.origin) {
+    throw new Error("SSRF blocked: resolved URL escapes target origin");
+  }
+  return parsed.toString();
+}
+
 // ---------------------------------------------------------------------------
 // Method handlers
 // ---------------------------------------------------------------------------
@@ -111,7 +126,7 @@ const handlers: Record<string, MethodHandler> = {
       options.agentIdentity.publicKey, options.agentIdentity.privateKey,
       options.restKey, "POST", apiPath, body,
     );
-    return fetchWithTimeout(new URL(apiPath, options.targetUrl).toString(), {
+    return fetchWithTimeout(buildAndValidateUrl(apiPath, options.targetUrl), {
       method: "POST",
       headers,
       body: JSON.stringify(body),
@@ -121,7 +136,7 @@ const handlers: Record<string, MethodHandler> = {
   async rawPost(args, options) {
     const [apiPath, body, customHeaders] = args as [string, unknown, Record<string, string> | undefined];
     validatePath(apiPath);
-    return fetchWithTimeout(new URL(apiPath, options.targetUrl).toString(), {
+    return fetchWithTimeout(buildAndValidateUrl(apiPath, options.targetUrl), {
       method: "POST",
       headers: { "content-type": "application/json", ...customHeaders },
       body: JSON.stringify(body),
@@ -131,7 +146,7 @@ const handlers: Record<string, MethodHandler> = {
   async rawGet(args, options) {
     const [apiPath] = args as [string];
     validatePath(apiPath);
-    return fetchWithTimeout(new URL(apiPath, options.targetUrl).toString(), {
+    return fetchWithTimeout(buildAndValidateUrl(apiPath, options.targetUrl), {
       method: "GET",
     });
   },
@@ -178,7 +193,7 @@ const handlers: Record<string, MethodHandler> = {
       identity.publicKey, identity.privateKey,
       options.restKey, "POST", apiPath, body,
     );
-    return fetchWithTimeout(new URL(apiPath, options.targetUrl).toString(), {
+    return fetchWithTimeout(buildAndValidateUrl(apiPath, options.targetUrl), {
       method: "POST",
       headers,
       body: JSON.stringify(body),
@@ -311,12 +326,21 @@ export function attachStubToolkitHost(child: ChildProcess): void {
       switch (method) {
         case "signedPost":
         case "rawPost":
-        case "signedPostAs":
+        case "signedPostAs": {
+          const stubArgs = m.args as unknown[];
+          const stubPath = method === "signedPostAs" ? (stubArgs[1] as string) : (stubArgs[0] as string);
+          validatePath(stubPath);
+          validateNoOriginEscape(stubPath);
           result = { status: 200, body: { stub: true } };
           break;
-        case "rawGet":
+        }
+        case "rawGet": {
+          const stubArgs = m.args as unknown[];
+          validatePath(stubArgs[0] as string);
+          validateNoOriginEscape(stubArgs[0] as string);
           result = { status: 200, body: { stub: true } };
           break;
+        }
         case "createIdentity":
           createCount++;
           if (createCount > 3) throw new Error("createIdentity() cap exceeded: maximum 3 identities per attack execution");
