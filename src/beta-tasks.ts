@@ -142,8 +142,11 @@ export async function checkReputation(
 // ---------------------------------------------------------------------------
 
 /**
- * Attempt to lock a bond significantly larger than what a fresh identity could support.
- * Tests whether reputation unlocks higher bond capacity.
+ * Attempt to lock a bond significantly larger than the normal agent budget.
+ * Tests whether ANY bond capacity limit exists — not whether trust unlocks
+ * higher caps. Verified: AgentGate accepts 500¢ from fresh identities with
+ * zero history, so acceptance here is an identity-agnostic capacity gap,
+ * not a reputation-based privilege escalation.
  */
 export async function highValueBondAttempt(
   identity: BetaIdentity,
@@ -152,17 +155,18 @@ export async function highValueBondAttempt(
   const repBefore = await getReputation(targetUrl, identity.identityId);
 
   try {
-    // Attempt a bond 5x the normal agent budget — should fail for untrusted identities
-    const bondData = await postBond(identity.keys, identity.identityId, 500, 120, "High-value operation — testing trust threshold");
+    // Attempt a bond 5x the normal agent budget — tests whether any cap exists
+    const bondData = await postBond(identity.keys, identity.identityId, 500, 120, "High-value operation — testing capacity limits");
     const bondId = bondData.bondId as string;
 
-    // If we got here, the bond was accepted — that's the signal we're testing for
     const repAfter = await getReputation(targetUrl, identity.identityId);
 
+    // Bond accepted — this is "uncaught" because AgentGate has no reputation-gated
+    // capacity enforcement. A fresh identity gets the same result.
     return {
       actionName: "highValueBondAttempt",
       caught: false,
-      details: `High-value bond (500¢) accepted for trusted identity. Bond: ${bondId.slice(0, 12)}... This may indicate reputation-based capacity expansion.`,
+      details: `High-value bond (500¢) accepted — no reputation-gated capacity enforcement. Bond: ${bondId.slice(0, 12)}... A fresh identity with zero history also gets 500¢ accepted.`,
       reputationBefore: repBefore,
       reputationAfter: repAfter,
     };

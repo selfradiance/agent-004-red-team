@@ -1,15 +1,16 @@
 # Agent 004: Red Team Simulator
 
-An adaptive, recursive, and coordinated red team agent that attacks live AgentGate infrastructure with three specialist personas. Claude picks attacks, reasons about defense gaps, generates novel JavaScript attack code in a sandbox, and coordinates multi-identity pressure testing. Built on the bond-and-slash accountability model — the attacker posts collateral too.
+An adaptive, recursive, and coordinated red team agent that attacks live AgentGate infrastructure with three teams of three agents (9 identities). Claude picks attacks, reasons about defense gaps, generates novel JavaScript attack code in a sandbox, and coordinates multi-identity swarm campaigns. Built on the bond-and-slash accountability model — the attacker posts collateral too.
 
 ## What This Does
 
-Agent 004 runs 48 attack scenarios across 12 categories against a live AgentGate instance over HTTP. Four modes of operation:
+Agent 004 runs 48 attack scenarios across 12 categories against a live AgentGate instance over HTTP. Five modes of operation:
 
 - **Static:** Runs all 48 attacks in fixed order (regression testing)
 - **Adaptive:** A Claude-powered strategist picks attacks each round and adapts based on results (default)
 - **Recursive:** Adaptive mode plus novel attack generation — Claude writes new JavaScript attack code and executes it in a permission-restricted sandbox
 - **Team:** Three specialist personas (Shadow, Whale, Chaos) with separate identities, bond budgets, and coordinated operations — tests whether per-identity defenses hold under multi-identity pressure
+- **Swarm:** Three teams of three agents (9 identities) with per-team strategists, a campaign coordinator, shared intelligence log, and 5-round interleaved campaigns — tests whether defenses hold under coordinated 9-agent pressure
 
 This is the fourth agent built on [AgentGate](https://github.com/selfradiance/agentgate). It's the first one designed to attack rather than use the system.
 
@@ -80,6 +81,30 @@ Team mode with custom rounds:
 npx tsx src/cli.ts --team --rounds 5
 ```
 
+Swarm mode (3 teams × 3 agents, 5-round campaign, interleaved execution):
+
+```bash
+npx tsx src/cli.ts --swarm
+```
+
+Swarm mode with fresh identities (required for canonical verification runs):
+
+```bash
+npx tsx src/cli.ts --fresh-swarm
+```
+
+Swarm mode with sequential execution (slower but easier to read):
+
+```bash
+npx tsx src/cli.ts --fresh-swarm --sequential
+```
+
+Swarm mode with custom rounds:
+
+```bash
+npx tsx src/cli.ts --swarm --rounds 3
+```
+
 Target a specific AgentGate instance:
 
 ```bash
@@ -89,7 +114,11 @@ npx tsx src/cli.ts --target https://agentgate.run
 **Flag rules:**
 - `--static` and `--team` are mutually exclusive (exits with error)
 - `--static` and `--recursive` are mutually exclusive
+- `--static` and `--swarm` are mutually exclusive
+- `--team` and `--swarm` are mutually exclusive
 - `--fresh-team` requires `--team`
+- `--fresh-swarm` implies `--swarm`
+- `--sequential` applies to swarm mode only
 - `--team` implies recursive mode (novel attack generation is included)
 - If `--static` and `--rounds` are both passed, `--static` takes precedence and `--rounds` is ignored
 
@@ -137,6 +166,37 @@ Team mode adds three specialist personas with separate AgentGate identities and 
 
 **Distributed Probe:** Two personas attack the same defense simultaneously from their own identities (500ms stagger). Tests whether AgentGate's per-identity defenses remain correctly isolated under concurrent cross-identity load.
 
+## Stage 5: Swarm Mode
+
+Swarm mode deploys three teams of three agents (9 identities total) in a coordinated campaign:
+
+### The Teams
+
+| Team | Objective | Budget | Agents |
+|------|-----------|--------|--------|
+| Alpha | Reconnaissance — map defenses, discover endpoints, probe timing | 150¢ (50¢/agent) | alpha-1, alpha-2, alpha-3 |
+| Beta | Trust exploitation — build reputation, then exploit trust assumptions | 300¢ (100¢/agent) | beta-1, beta-2, beta-3 |
+| Gamma | Coordinated pressure — synchronized attacks to overwhelm per-identity defenses | 450¢ (150¢/agent) | gamma-1, gamma-2, gamma-3 |
+
+### How It Works
+
+1. Each team has its own Claude-powered strategist that picks attacks based on team objectives and shared intelligence
+2. A campaign coordinator synthesizes cross-team intelligence between rounds
+3. Teams share findings via an intel log — indirect coordination, no direct communication
+4. Beta runs a two-phase model: trust-building (clean bond cycles in early rounds), then offensive trust-spending (late rounds)
+5. AgentGate enforces dual-control on resolution: Beta agents resolve each other's actions within the team
+6. Default 5 rounds with interleaved execution across all teams
+
+### Canonical v0.5.0 Run Results
+
+- 97 total attacks (Alpha 37, Beta 22, Gamma 38)
+- 77 caught, 20 uncaught (79% catch rate)
+- Gamma: 100% catch rate (38/38) — economic pressure fully contained
+- Beta: 48 clean bond cycles succeeded in trust-building phase
+- 0 swarm-emergent findings — AgentGate does not gate bond capacity on identity history
+- 73 intel log entries, coordinator synthesis every round
+- ~5 minutes runtime
+
 ## Attack Categories
 
 | Category | Scenarios | What It Tests |
@@ -160,7 +220,7 @@ Team mode adds three specialist personas with separate AgentGate identities and 
 npm test
 ```
 
-130 tests across 26 test files. Integration tests require a running AgentGate instance and valid API keys.
+306 tests across 34 test files. Integration tests require a running AgentGate instance and valid API keys.
 
 ## Tech Stack
 
