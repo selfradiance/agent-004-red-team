@@ -14,6 +14,8 @@ import { getScenario } from "./registry";
 import { buildLibraryMenu } from "./strategist";
 import { pickSwarmAttacks, submitTeamQuestions, getDefaultSwarmAttacks } from "./swarm-strategist";
 import { synthesizeIntelligence } from "./coordinator";
+import { pickBetaActions, getBetaPhase, type BetaStrategistConfig, type ReputationSnapshot, type BetaActionPick } from "./beta-strategist";
+import { cleanBondCycle, multipleCleanCycles, checkReputation, highValueBondAttempt, rapidExecutionBurst, resolveOtherIdentityAction, postSlashRecovery, type BetaIdentity, type BetaTaskResult } from "./beta-tasks";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -312,6 +314,118 @@ export function validateCampaignConfig(config: SwarmCampaignConfig): string[] {
 }
 
 // ---------------------------------------------------------------------------
+// Beta task execution helper
+// ---------------------------------------------------------------------------
+
+function betaIdentityFromSwarm(identity: SwarmAgentIdentity): BetaIdentity {
+  return {
+    keys: identity.keys,
+    identityId: identity.identityId,
+    agentId: identity.config.agentId,
+  };
+}
+
+async function executeBetaAction(
+  pick: BetaActionPick,
+  roundNumber: number,
+  position: number,
+  identities: Map<string, SwarmAgentIdentity>,
+  targetUrl: string,
+): Promise<SwarmAttackResult> {
+  const identity = identities.get(pick.agentId);
+  if (!identity) {
+    return {
+      scenarioId: `beta:${pick.actionName}`,
+      scenarioName: pick.actionName,
+      category: "Beta Trust",
+      expectedOutcome: "N/A",
+      actualOutcome: `Identity ${pick.agentId} not found`,
+      caught: false,
+      details: `Agent identity ${pick.agentId} not found.`,
+      teamName: "beta",
+      agentId: pick.agentId,
+      roundNumber,
+      executionPosition: position,
+    };
+  }
+
+  const betaId = betaIdentityFromSwarm(identity);
+  console.log(`  [Round ${roundNumber}] [beta/${pick.agentId}] Running ${pick.actionName}...`);
+
+  let result: BetaTaskResult;
+
+  try {
+    switch (pick.actionName) {
+      case "cleanBondCycle":
+        result = await cleanBondCycle(betaId, targetUrl);
+        break;
+      case "multipleCleanCycles": {
+        const count = (pick.params?.count as number) ?? 3;
+        result = await multipleCleanCycles(betaId, targetUrl, count);
+        break;
+      }
+      case "checkReputation":
+        result = await checkReputation(betaId, targetUrl);
+        break;
+      case "highValueBondAttempt":
+        result = await highValueBondAttempt(betaId, targetUrl);
+        break;
+      case "rapidExecutionBurst":
+        result = await rapidExecutionBurst(betaId, targetUrl);
+        break;
+      case "resolveOtherIdentityAction": {
+        // Use beta-1 as trusted, beta-3 as fresh (or pick.params.freshAgentId)
+        const freshAgentId = (pick.params?.freshAgentId as string) ?? "beta-3";
+        const freshIdentity = identities.get(freshAgentId);
+        if (!freshIdentity) {
+          result = { actionName: pick.actionName, caught: true, details: `Fresh identity ${freshAgentId} not found`, reputationBefore: null, reputationAfter: null };
+          break;
+        }
+        result = await resolveOtherIdentityAction(betaId, betaIdentityFromSwarm(freshIdentity), targetUrl);
+        break;
+      }
+      case "postSlashRecovery":
+        result = await postSlashRecovery(betaId, targetUrl);
+        break;
+      default:
+        result = { actionName: pick.actionName, caught: true, details: `Unknown Beta action: ${pick.actionName}`, reputationBefore: null, reputationAfter: null };
+    }
+  } catch (err) {
+    result = {
+      actionName: pick.actionName,
+      caught: true,
+      details: `Error: ${err instanceof Error ? err.message : String(err)}`,
+      reputationBefore: null,
+      reputationAfter: null,
+    };
+  }
+
+  const status = result.caught ? "CAUGHT" : "OK";
+  console.log(`    → ${status}: ${result.details.slice(0, 100)}`);
+
+  return {
+    scenarioId: `beta:${result.actionName}`,
+    scenarioName: result.actionName,
+    category: "Beta Trust",
+    expectedOutcome: "Trust exploitation test",
+    actualOutcome: result.details,
+    caught: result.caught,
+    details: result.details,
+    sideEffects: {
+      reputationBefore: result.reputationBefore ?? undefined,
+      reputationAfter: result.reputationAfter ?? undefined,
+      reputationDelta: result.reputationBefore !== null && result.reputationAfter !== null
+        ? result.reputationAfter - result.reputationBefore
+        : undefined,
+    },
+    teamName: "beta",
+    agentId: pick.agentId,
+    roundNumber,
+    executionPosition: position,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Main campaign loop
 // ---------------------------------------------------------------------------
 
@@ -328,6 +442,10 @@ export async function runSwarmCampaign(config: SwarmCampaignConfig): Promise<Swa
   for (const team of swarmConfig.teams) {
     allPriorResults.set(team.name, []);
   }
+
+  // Beta-specific state
+  const betaPriorResults: string[] = [];
+  const betaReputationData: ReputationSnapshot[] = [];
 
   printCampaignBanner(config);
 
@@ -359,10 +477,41 @@ export async function runSwarmCampaign(config: SwarmCampaignConfig): Promise<Swa
       console.log("  Coordinator synthesis complete.");
     }
 
-    // (b) Each team's strategist picks attacks (sequentially: Alpha, Beta, Gamma)
+    // (b) Each team's strategist picks attacks
     const teamAttacks = new Map<string, QueuedAttack[]>();
+    let betaActions: BetaActionPick[] = [];
 
     for (const team of swarmConfig.teams) {
+      if (team.name === "beta") {
+        // Beta uses its own strategist
+        const phase = getBetaPhase(round, totalRounds);
+        console.log(`\n  Team BETA strategist picking actions (phase: ${phase})...`);
+
+        const sharedIntel = intelLog.getSharedIntelForStrategist("beta", round);
+        const betaConfig: BetaStrategistConfig = {
+          team,
+          currentRound: round,
+          totalRounds,
+          sharedIntel,
+          reputationData: betaReputationData,
+          priorBetaResults: betaPriorResults,
+        };
+
+        const betaResponse = await pickBetaActions(betaConfig);
+        console.log(`  beta: ${betaResponse.selectedActions.length} actions selected (${betaResponse.phase}) — ${betaResponse.strategy}`);
+        betaActions = betaResponse.selectedActions;
+
+        // Beta actions don't go through the normal attack queue — they use their own execution path
+        // But we still put placeholder entries in teamAttacks for interleaving position tracking
+        const queued: QueuedAttack[] = betaResponse.selectedActions.map((pick) => ({
+          pick: { id: `beta:${pick.actionName}`, agentId: pick.agentId, reasoning: pick.reasoning },
+          teamName: "beta" as SwarmTeamName,
+          agentId: pick.agentId,
+        }));
+        teamAttacks.set("beta", queued);
+        continue;
+      }
+
       console.log(`\n  Team ${team.name.toUpperCase()} strategist picking attacks...`);
 
       const sharedIntel = intelLog.getSharedIntelForStrategist(team.name, round);
@@ -381,7 +530,7 @@ export async function runSwarmCampaign(config: SwarmCampaignConfig): Promise<Swa
       const response = await pickSwarmAttacks(stratConfig);
       console.log(`  ${team.name}: ${response.selectedAttacks.length} attacks selected — ${response.strategy}`);
 
-      // (c) Submit team questions to intel log
+      // Submit team questions to intel log
       submitTeamQuestions(response, intelLog, round);
 
       // Build queued attacks
@@ -398,21 +547,55 @@ export async function runSwarmCampaign(config: SwarmCampaignConfig): Promise<Swa
       ? sequentialAttacks(teamAttacks)
       : interleaveAttacks(teamAttacks);
 
-    console.log(`\n  Execution queue: ${executionQueue.length} attacks (${sequential ? "sequential" : "interleaved"})`);
+    console.log(`\n  Execution queue: ${executionQueue.length} actions (${sequential ? "sequential" : "interleaved"})`);
 
-    // (f) Execute each attack
+    // (f) Execute each attack — Beta actions use their own execution path
     const roundResults: SwarmAttackResult[] = [];
+    let betaActionIndex = 0;
+
     for (let i = 0; i < executionQueue.length; i++) {
       const attack = executionQueue[i];
-      const result = await executeQueuedAttack(
-        attack,
-        i,
-        round,
-        identities,
-        targetUrl,
-        apiKey,
-      );
-      roundResults.push(result);
+
+      if (attack.teamName === "beta") {
+        // Execute Beta action using Beta-specific logic
+        const betaPick = betaActions[betaActionIndex];
+        betaActionIndex++;
+
+        if (betaPick) {
+          const result = await executeBetaAction(betaPick, round, i, identities, targetUrl);
+          roundResults.push(result);
+
+          // Write Beta trust-building results to intel log as observations
+          const phase = getBetaPhase(round, totalRounds);
+          if (phase === "trust-building") {
+            intelLog.addEntry({
+              round,
+              team: "beta",
+              type: "observation",
+              subject: result.scenarioName,
+              content: `${result.agentId} completed ${result.scenarioName}. ${result.caught ? "Failed" : "Succeeded"}. Rep: ${result.sideEffects?.reputationBefore ?? "?"} → ${result.sideEffects?.reputationAfter ?? "?"}`,
+              targetHint: null,
+            });
+          }
+
+          // Track Beta results for strategist context
+          betaPriorResults.push(`[R${round}] ${result.agentId}: ${result.scenarioName} — ${result.caught ? "FAILED" : "OK"}: ${result.details.slice(0, 100)}`);
+
+          // Update reputation data
+          if (result.sideEffects?.reputationAfter !== undefined) {
+            const existing = betaReputationData.find((r) => r.agentId === result.agentId);
+            if (existing) {
+              existing.reputation = result.sideEffects.reputationAfter;
+            } else {
+              betaReputationData.push({ agentId: result.agentId, reputation: result.sideEffects.reputationAfter });
+            }
+          }
+        }
+      } else {
+        // Normal attack execution for Alpha/Gamma
+        const result = await executeQueuedAttack(attack, i, round, identities, targetUrl, apiKey);
+        roundResults.push(result);
+      }
     }
 
     // (g) Collect results for this round, grouped by team
@@ -430,8 +613,9 @@ export async function runSwarmCampaign(config: SwarmCampaignConfig): Promise<Swa
       allPriorResults.set(teamName, prior);
     }
 
-    // Also add team observations to intel log
+    // Add non-Beta team observations to intel log (Beta observations added during execution)
     for (const [teamName, results] of teamResults) {
+      if (teamName === "beta") continue;
       const caught = results.filter((r) => r.caught).length;
       const uncaught = results.length - caught;
       intelLog.addEntry({

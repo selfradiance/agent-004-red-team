@@ -109,32 +109,22 @@ async function main() {
       isFreshSwarm,
     );
 
-    // v0.5.0-alpha: only Alpha and Gamma teams (skip Beta)
     const fullSwarmConfig = getSwarmConfig();
-    const alphaGammaTeams = fullSwarmConfig.teams.filter(
-      (t) => t.name === "alpha" || t.name === "gamma",
-    );
-    const alphaGammaConfig = {
-      ...fullSwarmConfig,
-      teams: alphaGammaTeams as any,
-    };
 
-    // Build identities map (only Alpha + Gamma agents)
+    // Build identities map for all 9 agents
     const identitiesMap = new Map<string, SwarmAgentIdentity>();
     for (const identity of swarmIdentities) {
-      if (identity.config.team === "alpha" || identity.config.team === "gamma") {
-        identitiesMap.set(identity.config.agentId, identity);
-      }
+      identitiesMap.set(identity.config.agentId, identity);
     }
 
-    console.log(`  ${identitiesMap.size} identities loaded (Alpha + Gamma — Beta skipped for v0.5.0-alpha)`);
+    console.log(`  ${identitiesMap.size} identities loaded (Alpha + Beta + Gamma)`);
     for (const [agentId, identity] of identitiesMap) {
       console.log(`    ${agentId}: ${identity.identityId.slice(0, 20)}... [${identity.config.bondBudgetCents}¢]`);
     }
     console.log("");
 
     const campaignConfig: SwarmCampaignConfig = {
-      swarmConfig: alphaGammaConfig,
+      swarmConfig: fullSwarmConfig,
       identities: identitiesMap,
       targetUrl: agentGateUrl,
       totalRounds: rounds,
