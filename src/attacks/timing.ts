@@ -79,6 +79,13 @@ async function attack7_1(client: AttackClient, params?: AttackParams): Promise<A
 
   const freshId = idResult.data.identityId as string;
 
+  // Create a resolver identity (AgentGate requires a different identity to resolve)
+  const { publicKey: resPubKeyObj, privateKey: resPrivKeyObj } = generateKeyPairSync("ed25519");
+  const resPub = Buffer.from(resPubKeyObj.export({ format: "jwk" }).x!, "base64url").toString("base64");
+  const resPriv = Buffer.from(resPrivKeyObj.export({ format: "jwk" }).d!, "base64url").toString("base64");
+  const resIdResult = await signedPost(client.agentGateUrl, client.apiKey, resPub, resPriv, "/v1/identities", { publicKey: resPub });
+  const resolverId7_1 = (resIdResult.status < 300 ? resIdResult.data.identityId as string : freshId);
+
   // Lock a bond with short TTL using fresh identity
   const bondResult = await signedPost(client.agentGateUrl, client.apiKey, freshPub, freshPriv, "/v1/bonds/lock", {
     identityId: freshId,
@@ -129,9 +136,10 @@ async function attack7_1(client: AttackClient, params?: AttackParams): Promise<A
   // Wait until just before TTL expiry
   await new Promise((resolve) => setTimeout(resolve, resolveAtSeconds * 1000));
 
-  // Try to resolve — racing the sweeper, using fresh identity
-  const resolveResult = await signedPost(client.agentGateUrl, client.apiKey, freshPub, freshPriv, `/v1/actions/${actionId}/resolve`, {
+  // Try to resolve — racing the sweeper, using resolver identity
+  const resolveResult = await signedPost(client.agentGateUrl, client.apiKey, resPub, resPriv, `/v1/actions/${actionId}/resolve`, {
     outcome: "success",
+    resolverId: resolverId7_1,
   });
 
   // Either outcome is informative for the strategist
@@ -179,6 +187,13 @@ async function attack7_2(client: AttackClient, params?: AttackParams): Promise<A
 
   const freshIdentityId = idResult.data.identityId as string;
 
+  // Create a resolver identity (AgentGate requires a different identity to resolve)
+  const { publicKey: resPub7_2Obj, privateKey: resPriv7_2Obj } = generateKeyPairSync("ed25519");
+  const resPub7_2 = Buffer.from(resPub7_2Obj.export({ format: "jwk" }).x!, "base64url").toString("base64");
+  const resPriv7_2 = Buffer.from(resPriv7_2Obj.export({ format: "jwk" }).d!, "base64url").toString("base64");
+  const resIdResult7_2 = await signedPost(client.agentGateUrl, client.apiKey, resPub7_2, resPriv7_2, "/v1/identities", { publicKey: resPub7_2 });
+  const resolverId7_2 = (resIdResult7_2.status < 300 ? resIdResult7_2.data.identityId as string : freshIdentityId);
+
   // Lock a bond with the fresh identity
   const bondResult = await signedPost(client.agentGateUrl, client.apiKey, pub, priv, "/v1/bonds/lock", {
     identityId: freshIdentityId,
@@ -225,15 +240,16 @@ async function attack7_2(client: AttackClient, params?: AttackParams): Promise<A
 
   const actionId = actionResult.data.actionId as string;
 
-  // Fire parallel resolve attempts using the fresh identity's keys
+  // Fire parallel resolve attempts using the resolver identity's keys
   const resolvePromises: Promise<{ status: number; data: Record<string, unknown> }>[] = [];
   for (let i = 0; i < parallelCount; i++) {
     if (delayBetweenMs > 0 && i > 0) {
       await new Promise((resolve) => setTimeout(resolve, delayBetweenMs));
     }
     resolvePromises.push(
-      signedPost(client.agentGateUrl, client.apiKey, pub, priv, `/v1/actions/${actionId}/resolve`, {
+      signedPost(client.agentGateUrl, client.apiKey, resPub7_2, resPriv7_2, `/v1/actions/${actionId}/resolve`, {
         outcome: i % 2 === 0 ? "success" : "failed",
+        resolverId: resolverId7_2,
       }),
     );
   }

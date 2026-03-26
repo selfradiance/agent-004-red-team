@@ -81,6 +81,11 @@ async function attack11_1(client: AttackClient, params?: AttackParams): Promise<
 
   const identityId = idResult.data.identityId as string;
 
+  // Create a resolver identity (AgentGate requires a different identity to resolve)
+  const resolverKeys = freshKeypair();
+  const resIdResult = await signedPost(client.agentGateUrl, client.apiKey, resolverKeys.publicKey, resolverKeys.privateKey, "/v1/identities", { publicKey: resolverKeys.publicKey });
+  const resolverIdentityId = resIdResult.status < 300 ? resIdResult.data.identityId as string : identityId;
+
   // Get reputation before pumping
   const reputationBefore = await getReputation(client.agentGateUrl, identityId);
 
@@ -109,8 +114,9 @@ async function attack11_1(client: AttackClient, params?: AttackParams): Promise<
     if (actionResult.status >= 300) continue;
 
     const actionId = actionResult.data.actionId as string;
-    const resolveResult = await signedPost(client.agentGateUrl, client.apiKey, keys.publicKey, keys.privateKey, `/v1/actions/${actionId}/resolve`, {
+    const resolveResult = await signedPost(client.agentGateUrl, client.apiKey, resolverKeys.publicKey, resolverKeys.privateKey, `/v1/actions/${actionId}/resolve`, {
       outcome: "success",
+      resolverId: resolverIdentityId,
     });
     if (resolveResult.status < 300) successCount++;
   }

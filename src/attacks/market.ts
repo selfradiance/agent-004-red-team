@@ -94,6 +94,7 @@ async function attack10_1(client: AttackClient, _params?: AttackParams): Promise
   // Try to resolve immediately — deadline hasn't passed
   const resolveResult = await signedPostClient(client, `/v1/markets/${market.marketId}/resolve`, {
     outcome: "yes",
+    resolverId: client.keys.publicKey,
   });
 
   const caught = resolveResult.status >= 400;
@@ -137,6 +138,7 @@ async function attack10_2(client: AttackClient, _params?: AttackParams): Promise
   // This tests the documented known limitation: market endpoints are REST-key only
   const resolveResult = await signedPostClient(client, `/v1/markets/${market.marketId}/resolve`, {
     outcome: "yes",
+    resolverId: client.keys.publicKey,
   });
 
   // This is a known limitation probe — if it succeeds, that confirms the limitation

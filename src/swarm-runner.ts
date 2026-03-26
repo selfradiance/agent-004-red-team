@@ -325,6 +325,22 @@ function betaIdentityFromSwarm(identity: SwarmAgentIdentity): BetaIdentity {
   };
 }
 
+/**
+ * Pick a resolver identity for a Beta agent. AgentGate requires a different
+ * identity to resolve an action (dual-control). We pick the first Beta
+ * teammate that isn't the executor.
+ */
+function pickBetaResolver(executorAgentId: string, identities: Map<string, SwarmAgentIdentity>): BetaIdentity | null {
+  const betaAgents = ["beta-1", "beta-2", "beta-3"];
+  for (const agentId of betaAgents) {
+    if (agentId !== executorAgentId) {
+      const identity = identities.get(agentId);
+      if (identity) return betaIdentityFromSwarm(identity);
+    }
+  }
+  return null;
+}
+
 async function executeBetaAction(
   pick: BetaActionPick,
   roundNumber: number,
@@ -350,18 +366,35 @@ async function executeBetaAction(
   }
 
   const betaId = betaIdentityFromSwarm(identity);
+  const resolver = pickBetaResolver(pick.agentId, identities);
   console.log(`  [Round ${roundNumber}] [beta/${pick.agentId}] Running ${pick.actionName}...`);
+
+  if (!resolver) {
+    return {
+      scenarioId: `beta:${pick.actionName}`,
+      scenarioName: pick.actionName,
+      category: "Beta Trust",
+      expectedOutcome: "N/A",
+      actualOutcome: "No resolver identity available",
+      caught: true,
+      details: "No Beta teammate available to act as resolver (dual-control requires separate identity).",
+      teamName: "beta",
+      agentId: pick.agentId,
+      roundNumber,
+      executionPosition: position,
+    };
+  }
 
   let result: BetaTaskResult;
 
   try {
     switch (pick.actionName) {
       case "cleanBondCycle":
-        result = await cleanBondCycle(betaId, targetUrl);
+        result = await cleanBondCycle(betaId, resolver, targetUrl);
         break;
       case "multipleCleanCycles": {
         const count = (pick.params?.count as number) ?? 3;
-        result = await multipleCleanCycles(betaId, targetUrl, count);
+        result = await multipleCleanCycles(betaId, resolver, targetUrl, count);
         break;
       }
       case "checkReputation":
@@ -371,7 +404,7 @@ async function executeBetaAction(
         result = await highValueBondAttempt(betaId, targetUrl);
         break;
       case "rapidExecutionBurst":
-        result = await rapidExecutionBurst(betaId, targetUrl);
+        result = await rapidExecutionBurst(betaId, resolver, targetUrl);
         break;
       case "resolveOtherIdentityAction": {
         // Use beta-1 as trusted, beta-3 as fresh (or pick.params.freshAgentId)
@@ -385,7 +418,7 @@ async function executeBetaAction(
         break;
       }
       case "postSlashRecovery":
-        result = await postSlashRecovery(betaId, targetUrl);
+        result = await postSlashRecovery(betaId, resolver, targetUrl);
         break;
       default:
         result = { actionName: pick.actionName, caught: true, details: `Unknown Beta action: ${pick.actionName}`, reputationBefore: null, reputationAfter: null };

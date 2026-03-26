@@ -127,6 +127,23 @@ async function attack2_1(client: AttackClient, params?: AttackParams): Promise<A
 
 async function attack2_2(client: AttackClient, params?: AttackParams): Promise<AttackResult> {
   const secondOutcome = (typeof params?.second_outcome === "string" ? params.second_outcome as "success" | "failed" : "failed");
+
+  // Create a resolver identity (AgentGate requires a different identity to resolve)
+  let resolver: AttackClient;
+  try {
+    resolver = await createFreshClient(client);
+  } catch {
+    return {
+      scenarioId: "2.2",
+      scenarioName: "Double-resolve",
+      category: CATEGORY,
+      expectedOutcome: "Second resolution rejected",
+      actualOutcome: "Could not create resolver identity",
+      caught: false,
+      details: "Could not complete test — resolver identity creation failed.",
+    };
+  }
+
   // Lock a bond
   const bondResult = await signedPost(client, "/v1/bonds/lock", {
     identityId: client.identityId,
@@ -174,9 +191,10 @@ async function attack2_2(client: AttackClient, params?: AttackParams): Promise<A
 
   const actionId = actionResult.data.actionId as string;
 
-  // First resolve — should succeed
-  const firstResolve = await signedPost(client, `/v1/actions/${actionId}/resolve`, {
+  // First resolve — should succeed (resolver signs, not executor)
+  const firstResolve = await signedPost(resolver, `/v1/actions/${actionId}/resolve`, {
     outcome: "success",
+    resolverId: resolver.identityId,
   });
 
   if (firstResolve.status >= 300) {
@@ -192,8 +210,9 @@ async function attack2_2(client: AttackClient, params?: AttackParams): Promise<A
   }
 
   // Second resolve — should be rejected
-  const secondResolve = await signedPost(client, `/v1/actions/${actionId}/resolve`, {
+  const secondResolve = await signedPost(resolver, `/v1/actions/${actionId}/resolve`, {
     outcome: secondOutcome,
+    resolverId: resolver.identityId,
   });
 
   const caught = secondResolve.status >= 400;
@@ -444,6 +463,8 @@ async function attack2_6(client: AttackClient, params?: AttackParams): Promise<A
 async function attack2_7(client: AttackClient, _params?: AttackParams): Promise<AttackResult> {
   // Use a fresh identity to avoid rate-limit interference
   const fresh = await createFreshClient(client);
+  // Create a resolver identity (AgentGate requires a different identity to resolve)
+  const resolver2_7 = await createFreshClient(client);
 
   // Lock a bond, execute, resolve as success (bond released), then try to execute again
   const bondResult = await signedPost(fresh, "/v1/bonds/lock", {
@@ -492,9 +513,10 @@ async function attack2_7(client: AttackClient, _params?: AttackParams): Promise<
 
   const actionId = actionResult.data.actionId as string;
 
-  // Resolve as success — this releases the bond
-  const resolveResult = await signedPost(fresh, `/v1/actions/${actionId}/resolve`, {
+  // Resolve as success — this releases the bond (resolver signs, not executor)
+  const resolveResult = await signedPost(resolver2_7, `/v1/actions/${actionId}/resolve`, {
     outcome: "success",
+    resolverId: resolver2_7.identityId,
   });
 
   if (resolveResult.status >= 300) {

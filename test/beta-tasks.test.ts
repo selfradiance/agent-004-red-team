@@ -40,11 +40,14 @@ import {
 
 function makeMockIdentity(agentId: string = "beta-1"): BetaIdentity {
   return {
-    keys: { publicKey: "test-pub", privateKey: "test-priv" },
+    keys: { publicKey: `test-pub-${agentId}`, privateKey: `test-priv-${agentId}` },
     identityId: `id-${agentId}`,
     agentId,
   };
 }
+
+// Default resolver — different identity from executor
+const defaultResolver = makeMockIdentity("beta-2");
 
 // ---------------------------------------------------------------------------
 // Trust-building action result structures
@@ -64,7 +67,7 @@ describe("beta-tasks — result structure", () => {
     mockExecuteBondedAction.mockResolvedValue({ actionId: "action-456" });
     mockResolveAction.mockResolvedValue({});
 
-    const result = await cleanBondCycle(makeMockIdentity(), "http://test:3000");
+    const result = await cleanBondCycle(makeMockIdentity(), defaultResolver, "http://test:3000");
 
     expect(result).toHaveProperty("actionName");
     expect(result).toHaveProperty("caught");
@@ -76,6 +79,22 @@ describe("beta-tasks — result structure", () => {
     expect(typeof result.details).toBe("string");
     expect(result.actionName).toBe("cleanBondCycle");
     expect(result.caught).toBe(false);
+  });
+
+  it("cleanBondCycle passes resolver keys to resolveAction", async () => {
+    mockGetReputation.mockResolvedValue(50);
+    mockPostBond.mockResolvedValue({ bondId: "bond-123" });
+    mockExecuteBondedAction.mockResolvedValue({ actionId: "action-456" });
+    mockResolveAction.mockResolvedValue({});
+
+    await cleanBondCycle(makeMockIdentity("beta-1"), defaultResolver, "http://test:3000");
+
+    expect(mockResolveAction).toHaveBeenCalledWith(
+      defaultResolver.keys,
+      defaultResolver.identityId,
+      "action-456",
+      "success",
+    );
   });
 
   it("checkReputation returns reputation data structure", async () => {
@@ -118,7 +137,7 @@ describe("beta-tasks — result structure", () => {
     mockGetReputation.mockResolvedValue(null);
     mockPostBond.mockRejectedValue(new Error("Bond failed"));
 
-    const result = await rapidExecutionBurst(makeMockIdentity(), "http://test:3000");
+    const result = await rapidExecutionBurst(makeMockIdentity(), defaultResolver, "http://test:3000");
 
     expect(result.actionName).toBe("rapidExecutionBurst");
     expect(typeof result.caught).toBe("boolean");
@@ -154,7 +173,7 @@ describe("beta-tasks — result structure", () => {
     mockExecuteBondedAction.mockResolvedValue({ actionId: "action-slash" });
     mockResolveAction.mockResolvedValue({});
 
-    const result = await postSlashRecovery(makeMockIdentity(), "http://test:3000");
+    const result = await postSlashRecovery(makeMockIdentity(), defaultResolver, "http://test:3000");
 
     expect(result.actionName).toBe("postSlashRecovery");
     expect(typeof result.caught).toBe("boolean");
@@ -172,7 +191,7 @@ describe("beta-tasks — result structure", () => {
     mockExecuteBondedAction.mockResolvedValue({ actionId: "action-multi" });
     mockResolveAction.mockResolvedValue({});
 
-    const result = await multipleCleanCycles(makeMockIdentity(), "http://test:3000", 4);
+    const result = await multipleCleanCycles(makeMockIdentity(), defaultResolver, "http://test:3000", 4);
 
     expect(result.actionName).toBe("multipleCleanCycles");
     expect(result.details).toContain("4 cycles");

@@ -1,6 +1,10 @@
 // Beta team task definitions for Stage 5 — trust-building (legitimate actions)
 // and offensive trust-spending (attacks that exploit accumulated reputation).
 // Beta agents build standing in early rounds, then spend it offensively.
+//
+// AgentGate enforces dual-control: the identity that executes an action cannot
+// resolve it. A different "resolver" identity must resolve. Beta agents resolve
+// each other's actions within the team.
 
 import { postBond, executeBondedAction, resolveAction, signRequest } from "./agentgate-client";
 import { getReputation } from "./side-effects";
@@ -32,12 +36,13 @@ export interface BetaTaskResult {
 /**
  * Complete a clean bond lifecycle: lock bond → execute valid action → resolve successfully.
  * This is a legitimate operation that builds reputation.
+ * Requires a resolver identity (different from executor) due to AgentGate's dual-control.
  */
 export async function cleanBondCycle(
   identity: BetaIdentity,
+  resolver: BetaIdentity,
   targetUrl: string,
 ): Promise<BetaTaskResult> {
-  const apiKey = process.env.AGENTGATE_REST_KEY ?? "";
   const repBefore = await getReputation(targetUrl, identity.identityId);
 
   try {
@@ -58,8 +63,8 @@ export async function cleanBondCycle(
 
     const actionId = actionData.actionId as string;
 
-    // Step 3: Resolve successfully
-    await resolveAction(identity.keys, actionId, "success");
+    // Step 3: Resolve successfully (resolver identity signs the resolve request)
+    await resolveAction(resolver.keys, resolver.identityId, actionId, "success");
 
     const repAfter = await getReputation(targetUrl, identity.identityId);
 
@@ -87,6 +92,7 @@ export async function cleanBondCycle(
  */
 export async function multipleCleanCycles(
   identity: BetaIdentity,
+  resolver: BetaIdentity,
   targetUrl: string,
   count: number = 3,
 ): Promise<BetaTaskResult> {
@@ -95,7 +101,7 @@ export async function multipleCleanCycles(
   let failures = 0;
 
   for (let i = 0; i < count; i++) {
-    const result = await cleanBondCycle(identity, targetUrl);
+    const result = await cleanBondCycle(identity, resolver, targetUrl);
     results.push(`Cycle ${i + 1}: ${result.caught ? "FAILED" : "OK"}`);
     if (result.caught) failures++;
   }
@@ -175,9 +181,11 @@ export async function highValueBondAttempt(
 /**
  * Attempt a burst of rapid executions that would normally trigger rate limiting.
  * Tests whether reputation provides rate-limit leniency.
+ * Resolver identity resolves each action in the burst.
  */
 export async function rapidExecutionBurst(
   identity: BetaIdentity,
+  resolver: BetaIdentity,
   targetUrl: string,
 ): Promise<BetaTaskResult> {
   const repBefore = await getReputation(targetUrl, identity.identityId);
@@ -202,7 +210,7 @@ export async function rapidExecutionBurst(
           3,
         );
         const actionId = actionData.actionId as string;
-        await resolveAction(identity.keys, actionId, "success");
+        await resolveAction(resolver.keys, resolver.identityId, actionId, "success");
         succeeded++;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -273,7 +281,7 @@ export async function resolveOtherIdentityAction(
     const actionId = actionData.actionId as string;
 
     // Trusted identity attempts to resolve the fresh identity's action
-    await resolveAction(trustedIdentity.keys, actionId, "success");
+    await resolveAction(trustedIdentity.keys, trustedIdentity.identityId, actionId, "success");
 
     const repAfter = await getReputation(targetUrl, trustedIdentity.identityId);
 
@@ -299,9 +307,11 @@ export async function resolveOtherIdentityAction(
 /**
  * Intentionally get slashed, then attempt to continue operating.
  * Tests whether accumulated reputation provides resilience after a penalty.
+ * Resolver identity resolves the actions.
  */
 export async function postSlashRecovery(
   identity: BetaIdentity,
+  resolver: BetaIdentity,
   targetUrl: string,
 ): Promise<BetaTaskResult> {
   const repBefore = await getReputation(targetUrl, identity.identityId);
@@ -322,7 +332,7 @@ export async function postSlashRecovery(
     const actionId = actionData.actionId as string;
 
     // Resolve as failed — this should trigger a slash/penalty
-    await resolveAction(identity.keys, actionId, "failed");
+    await resolveAction(resolver.keys, resolver.identityId, actionId, "failed");
 
     const repMid = await getReputation(targetUrl, identity.identityId);
 
@@ -341,7 +351,7 @@ export async function postSlashRecovery(
         5,
       );
       const actionId2 = actionData2.actionId as string;
-      await resolveAction(identity.keys, actionId2, "success");
+      await resolveAction(resolver.keys, resolver.identityId, actionId2, "success");
       canContinue = true;
     } catch {
       canContinue = false;

@@ -250,13 +250,14 @@ export async function executeBondedAction(
 }
 
 export async function resolveAction(
-  keys: AgentKeys,
+  resolverKeys: AgentKeys,
+  resolverIdentityId: string,
   actionId: string,
-  outcome: "success" | "failed",
+  outcome: "success" | "failed" | "malicious",
 ): Promise<Record<string, unknown>> {
   return signedPost(
     `/v1/actions/${actionId}/resolve`,
-    { outcome },
-    keys,
+    { outcome, resolverId: resolverIdentityId },
+    resolverKeys,
   );
 }

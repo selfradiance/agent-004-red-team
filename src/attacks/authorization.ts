@@ -191,7 +191,7 @@ async function attack4_2(client: AttackClient, params?: AttackParams): Promise<A
     client.agentGateUrl, client.apiKey,
     client.keys.publicKey, client.keys.privateKey,
     `/v1/actions/${actionId}/resolve`,
-    { outcome: "failed" },
+    { outcome: "failed", resolverId: client.identityId },
   );
 
   const caught = crossResult.status >= 400;
@@ -312,6 +312,10 @@ async function attack4_5(client: AttackClient, params?: AttackParams): Promise<A
   const keys = freshKeypair();
   const identityId = await registerIdentity(client.agentGateUrl, client.apiKey, keys.publicKey, keys.privateKey);
 
+  // Create a resolver identity (AgentGate requires a different identity to resolve)
+  const resolverKeys = freshKeypair();
+  const resolverIdentityId = await registerIdentity(client.agentGateUrl, client.apiKey, resolverKeys.publicKey, resolverKeys.privateKey);
+
   // Accumulate malicious resolutions to trigger auto-ban (threshold is 3)
   for (let i = 0; i < maliciousCount; i++) {
     // Lock a bond
@@ -375,12 +379,12 @@ async function attack4_5(client: AttackClient, params?: AttackParams): Promise<A
 
     const actionId = actionResult.data.actionId as string;
 
-    // Resolve as malicious to accumulate strikes
+    // Resolve as malicious to accumulate strikes (resolver signs, not executor)
     await signedPost(
       client.agentGateUrl, client.apiKey,
-      keys.publicKey, keys.privateKey,
+      resolverKeys.publicKey, resolverKeys.privateKey,
       `/v1/actions/${actionId}/resolve`,
-      { outcome: "malicious" },
+      { outcome: "malicious", resolverId: resolverIdentityId },
     );
   }
 
