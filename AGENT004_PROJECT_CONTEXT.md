@@ -1,6 +1,6 @@
 # Agent 004: Red Team Simulator — Project Context
 
-**Last updated:** 2026-03-26 (Session 7)
+**Last updated:** 2026-03-26 (Session 8)
 **Status:** v0.5.0 shipped (Stage 5 complete).
 **Owner:** James Toole
 **Repo:** https://github.com/selfradiance/agent-004-red-team
@@ -543,6 +543,23 @@ Design triple-audited by ChatGPT, Gemini, and Grok with final ChatGPT confirmati
 
 ---
 
+## What "Done" Looks Like (v0.5.0) — ALL COMPLETE
+
+1. ✅ Swarm configuration module (src/swarm.ts) — 3 teams × 3 agents, per-agent bond budgets, campaign cap, team objectives
+2. ✅ Swarm identity creation — 9 identities registered on AgentGate with keypair persistence
+3. ✅ Intel log (src/intel-log.ts) — shared intelligence log with round/team/type filtering, chronological ordering
+4. ✅ Per-team strategist (src/swarm-strategist.ts) — Claude-powered attack selection with intel log context
+5. ✅ Campaign coordinator (src/coordinator.ts) — cross-team intelligence synthesis, informational only (not directive)
+6. ✅ Beta team strategist (src/beta-strategist.ts) — two-phase model (trust-building → offensive), phase transition at midpoint
+7. ✅ Beta team tasks (src/beta-tasks.ts) — cleanBondCycle, multipleCleanCycles, checkReputation, highValueBondAttempt, rapidExecutionBurst, resolveOtherIdentityAction, postSlashRecovery
+8. ✅ Campaign runner (src/swarm-runner.ts) — interleaved execution, budget enforcement, phase validation, crash recovery with partial results
+9. ✅ Swarm reporter (src/swarm-reporter.ts) — Claude-powered report with three-tier provenance, counterfactual test definition, fallback for API unavailability
+10. ✅ CLI integration — --swarm, --fresh-swarm, --sequential flags, swarm campaign summary display
+11. ✅ Canonical 5-round run verified against live AgentGate — 97 attacks, 77 caught, 20 uncaught, 0 swarm-emergent
+12. ✅ 8-round Claude Code audit + Codex cold-eyes audit — 14 + 4 fixes applied, all verified
+
+---
+
 ## Completed Milestones
 
 1. ✅ Project setup: repo initialized, .gitignore, AGENTS.md, package.json, tsconfig.json, .env.example
@@ -599,7 +616,9 @@ Design triple-audited by ChatGPT, Gemini, and Grok with final ChatGPT confirmati
 52. ✅ v0.4.0 finalized — package.json bumped to 0.4.0, README fully updated (four modes, persona table, coordination types, all CLI flags, test count 130/26), Round 6 cosmetic finding documented in Known Issues, v0.4.0 annotated tag pushed.
 53. ✅ Codex (OpenAI) cold-eyes code audit of v0.4.0 — 5 findings: 1 critical (SSRF origin escape in sandbox toolkit-host.ts), 3 medium (file permissions on private keys, inconclusive sandbox crash reporting, hard-coded caught:true in recon 12.1), 1 low (tests not hermetic). 4 fixes applied: SSRF origin validation on all 4 HTTP methods with 4 new tests, identity files written with mode 0o600, sandbox crashes prefixed [INCONCLUSIVE], recon 12.1 flipped to caught:false when endpoints leak without auth. Low finding documented as known limitation.
 54. ✅ v0.5.0 shipped — Stage 5: Coordinated Swarms. Canonical run results: 97 total attacks (Alpha 37, Beta 22, Gamma 38). 77 caught, 20 uncaught (79% catch rate). Gamma: 100% catch rate (38/38) — economic pressure fully contained. Beta: 48 clean bond cycles in trust-building phase, offensive phase confirmed no reputation-gated capacity. 0 swarm-emergent findings, 2 cross-team findings, remaining single-team. Coordinator synthesis ran every round, demonstrably influenced team strategy. 73 intel log entries. ~5 minutes runtime. Key finding: AgentGate's defenses hold under coordinated 9-agent swarm pressure but lack reputation-gated bond capacity.
-55. ✅ Recursive red team run against hardened AgentGate (post-Codex + Claude Code cross-audit, 95 tests, 24 security fixes). 55 total attacks (40 library + 15 novel). 45 caught, 10 reported uncaught. Investigation revealed zero genuinely new vulnerabilities — uncaught results were: already-documented design decisions (unauthenticated GET endpoints), self-resolution blocking (added during audit) preventing Agent 004 from resolving its own actions to trigger auto-ban, and capacity math misunderstandings. Key insight: the self-resolution fix made AgentGate harder to attack from the outside — Agent 004 couldn't manipulate the governance system because it couldn't grade its own work. Auto-ban confirmed working via dedicated test in AgentGate repo.
+55. ✅ 8-round Claude Code audit of v0.5.0 completed — Beta Tasks & Trust Logic, Budget Enforcement, Sandbox & Isolation, Coordinator & Strategist LLM Integration, Error Handling & Resilience, Runner & Orchestration, Documentation Accuracy & Input Validation, Swarm Reporter & Intel Log, Dependencies & Test Coverage, Architecture & Code Quality. 14 fixes across 8 rounds: phase enforcement at execution time (not just prompt), BudgetTracker class with per-agent and campaign caps, multipleCleanCycles iteration cap, freshAgentId cross-team validation, coordinator detail truncation, observation cap (8), strategist fallback on API failure, question cap per team (5), campaign crash recovery with partial results, CLI unhandled rejection handler, --rounds cap warning, --swarm --recursive warning, static mode API key gating, readonly IntelEntry with deep copies. Round 8 passed clean — no fixable findings. 330 tests across 34 files. Zero new dependencies.
+56. ✅ Codex (OpenAI) cold-eyes audit of v0.5.0 — 4 findings: 3 medium (prompt injection via raw AgentGate responses in coordinator/reporter/strategist prompts, scenario ID validation gaps in swarm-strategist, unbounded attack selections from Claude), 1 low (no timeout on identity registration fetch). All 4 fixed: quoteIntelForPrompt() sanitizes untrusted strings with JSON-stringify + control char stripping + injection boundary warnings, attack/action caps in parsers (10 attacks, 6 beta actions, 5 questions), 10s AbortController timeout on registration. Claude Code cross-verified all fixes: tsc clean, 330 tests passing (same 9 pre-existing AgentGate integration failures), zero regressions. +327/-47 lines across 18 files.
+57. ✅ Recursive red team run against hardened AgentGate (post-Codex + Claude Code cross-audit, 95 tests, 24 security fixes). 55 total attacks (40 library + 15 novel). 45 caught, 10 reported uncaught. Investigation revealed zero genuinely new vulnerabilities — uncaught results were: already-documented design decisions (unauthenticated GET endpoints), self-resolution blocking (added during audit) preventing Agent 004 from resolving its own actions to trigger auto-ban, and capacity math misunderstandings. Key insight: the self-resolution fix made AgentGate harder to attack from the outside — Agent 004 couldn't manipulate the governance system because it couldn't grade its own work. Auto-ban confirmed working via dedicated test in AgentGate repo.
 
 ---
 
@@ -674,6 +693,11 @@ Design triple-audited by ChatGPT, Gemini, and Grok with final ChatGPT confirmati
 | Global nullification (not just blocklist) | Deleting fetch/require/process from globalThis means even if validator is bypassed, network primitives don't exist in memory. | Node.js changes how globals work in a future version |
 | Node 22 permission flags (not Node 25) | Stay on LTS. --allow-fs-write=false and --allow-child-process=false work. Accept missing --allow-net. | Need OS-level network restriction (upgrade to Node 25+ or use Docker) |
 | createIdentity() capped at 3 per attack | Prevents degenerate Sybil spam. Forces novel attacks to be clever, not just noisy. Stage 2 already surfaced identity flood as a limitation. | A specific attack hypothesis genuinely needs >3 identities |
+| Coordinator is informational, not directive | Teams coordinate through shared intel, not top-down commands. Emergent coordination is more realistic and prevents single-point-of-failure in strategy. | Need guaranteed multi-team sequencing for specific attack chains |
+| Interleaved execution (not parallel) | Deterministic logging, reproducible cross-team interaction analysis, simpler debugging. Real swarms could be parallel but reproducibility > realism for a portfolio tool. | Need to test AgentGate's behavior under truly concurrent multi-team load |
+| 5-round default campaigns | Enough rounds for trust-building → offensive phase transition (Beta), multi-round adaptation (Alpha/Gamma), and coordinator synthesis to influence strategy. Keeps API costs manageable. | Testing shows 5 rounds is insufficient for coordinator influence to propagate |
+| Indirect intel sharing (log, not messages) | Teams publish findings; other teams read the log. No direct team-to-team communication. Prevents strategist prompt injection across teams. | Need real-time tactical coordination between teams |
+| Three-layer budget model (per-agent, per-team, campaign) | Per-agent prevents runaway spending by one agent, per-team caps team dominance, campaign cap bounds total cost. Runtime-enforced via BudgetTracker class. | Budget granularity causes too many budget-exceeded skips in short campaigns |
 
 ---
 
@@ -688,7 +712,7 @@ Design triple-audited by ChatGPT, Gemini, and Grok with final ChatGPT confirmati
 - Stage 2 attack library audited by three independent AI auditors — all three converged on MCP, market, and economic gaps; all incorporated
 - Strategist prompt design and runner loop architecture are locked
 - Stage 4 coordinated operations produce clean results — both handoff and distributed_probe work, AgentGate holds under multi-identity pressure
-- 130 tests passing across 26 files, zero new dependencies in v0.4.0
+- 330 tests passing across 34 files, zero new dependencies through v0.5.0
 - Stage 5 swarm campaign verified — 9 identities, 5-round interleaved campaigns, coordinator synthesis every round, 97 attacks in canonical run
 - AgentGate does not expose reputation scores or gate bond capacity on identity history — Beta's trust-building succeeds mechanically but offensive payoff is identity-agnostic
 
@@ -731,20 +755,26 @@ Design triple-audited by ChatGPT, Gemini, and Grok with final ChatGPT confirmati
 - **Stage 4 personas:** Tested — 3-round --fresh-team run verified all three personas receive assignments matching specialties
 - **Coordinated operations:** Tested — both handoff and distributed_probe executed successfully, classified as "intended behavior"
 - **Multi-identity pressure:** Tested — AgentGate held up, no enforcement inconsistency under coordinated cross-identity load
-- **Codex audit:** Completed — cold-eyes code audit by OpenAI Codex, 5 findings, 4 fixed, 1 documented
+- **Codex v0.4.0 audit:** Completed — cold-eyes code audit by OpenAI Codex, 5 findings, 4 fixed, 1 documented
 - **Stage 5 swarm campaigns:** Tested — canonical 5-round run with 9 agents, 97 attacks, coordinator synthesis every round
 - **Dual-control resolution:** Tested — all resolve calls use separate resolver identity, verified against live AgentGate
 - **Beta trust-building:** Tested — 48 clean bond cycles succeeded, but reputation-gated capacity not present in AgentGate
+- **v0.5.0 Claude Code audit:** Completed — 8-round security and code quality audit, 14 fixes, round 8 clean, zero regressions
+- **Codex v0.5.0 audit:** Completed — cold-eyes audit, 4 findings (3 medium, 1 low), all fixed, Claude Code cross-verified
+- **Budget enforcement:** Tested — BudgetTracker enforces per-agent and campaign caps at runtime, 15 unit tests covering all edge cases
+- **Phase enforcement:** Tested — isActionValidForPhase() rejects wrong-phase actions at execution time, not just prompt time
+- **Intel log integrity:** Tested — readonly fields, deep-copy returns, chronological ordering guaranteed by insertion order
+- **Prompt sanitization:** Tested — quoteIntelForPrompt() applied to all untrusted data entering Claude prompts across coordinator, reporter, and intel log
 
 ---
 
 ## Next Steps
 
-1. Write the Medium article for Agent 003 (Email Rewriter) — give Agent 002's article breathing room
-2. Write the Medium article for Agent 004 — all five stages shipped. Full arc: static → adaptive → recursive → coordinated team → coordinated swarms. Lead with internal-tests-vs-external-HTTP distinction. Feature the swarm result ("AgentGate held up under coordinated 9-agent swarm pressure"). Show generated attack code. Address "this is just automated testing with extra steps" objection. Feature discovered limitations (including honest Beta reputation finding) as evidence of rigor. Note: 0 swarm-emergent findings — the swarm methodology is sound but AgentGate's lack of reputation-gated capacity means trust-building doesn't unlock differential outcomes.
+1. Write the Medium article for Agent 003 (Email Rewriter) — give Agent 002's article breathing room.
+2. Write the Medium article for Agent 004 — v0.5.0 is the article candidate. All five stages shipped. Full arc: static → adaptive → recursive → coordinated team → coordinated swarms. Lead with internal-tests-vs-external-HTTP distinction. Feature the swarm result ("AgentGate held up under coordinated 9-agent swarm pressure"). Show generated attack code. Address "this is just automated testing with extra steps" objection. Feature discovered limitations (including honest Beta reputation finding) as evidence of rigor. Note: 0 swarm-emergent findings — the swarm methodology is sound but AgentGate's lack of reputation-gated capacity means trust-building doesn't unlock differential outcomes. Audit trail: 8-round Claude Code audit (14 fixes) + Codex cold-eyes audit (4 fixes) + Claude Code cross-verification = triple-audited codebase.
 3. Update AgentGate README with Agent 004 v0.5.0 in "Built With AgentGate" section.
-4. Consider Agent 005 — Recursive Code Reviewer. Reuse the sandbox architecture from Agent 004 in a constructive context. Strongest framing: "I took the sandbox that survived 100+ adversarial tests and turned it into something constructive."
-5. Stage 5 (v0.5.0): Coordinated Swarms — design locked, ready to build v0.5.0-alpha.
+4. Consider Agent 005 article — Recursive Code Reviewer. Reuse the sandbox architecture from Agent 004 in a constructive context. Strongest framing: "I took the sandbox that survived 100+ adversarial tests and turned it into something constructive."
+5. Burden for further red-team escalation is high — v0.5.0 canonical run found 0 swarm-emergent findings and the 8-round + Codex audits surfaced no critical or high issues. Further escalation (more agents, more teams, longer campaigns) would likely produce diminishing returns without AgentGate adding reputation-gated features to exploit. Agent 004 is functionally complete.
 
 ---
 
