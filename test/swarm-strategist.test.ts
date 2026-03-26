@@ -267,6 +267,23 @@ describe("swarm-strategist — parseSwarmStrategyResponse", () => {
     const result = parseSwarmStrategyResponse(json, "gamma");
     expect(result.questionsForIntelLog).toHaveLength(0);
   });
+
+  it("caps selected attacks at 10", () => {
+    const json = JSON.stringify({
+      round: 1,
+      strategy: "spread coverage",
+      selectedAttacks: Array.from({ length: 12 }, (_, index) => ({
+        id: `${index + 1}.1`,
+        agentId: "alpha-1",
+        reasoning: `pick ${index + 1}`,
+      })),
+      questionsForIntelLog: [],
+    });
+
+    const result = parseSwarmStrategyResponse(json, "alpha");
+    expect(result.selectedAttacks).toHaveLength(10);
+    expect(result.selectedAttacks[9].id).toBe("10.1");
+  });
 });
 
 // ---------------------------------------------------------------------------

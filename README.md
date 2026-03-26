@@ -121,6 +121,8 @@ npx tsx src/cli.ts --target https://agentgate.run
 - `--sequential` applies to swarm mode only
 - `--team` implies recursive mode (novel attack generation is included)
 - If `--static` and `--rounds` are both passed, `--static` takes precedence and `--rounds` is ignored
+- `--rounds` is capped at 20 to prevent runaway API costs
+- `--static` mode can run without `ANTHROPIC_API_KEY` (report generation is skipped)
 
 ## Stage 2: Adaptive Mode
 

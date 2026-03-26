@@ -28,8 +28,12 @@ async function main() {
 
   const roundsIndex = process.argv.indexOf("--rounds");
   const roundsArg = roundsIndex !== -1 ? parseInt(process.argv[roundsIndex + 1], 10) : NaN;
-  // Cap at 20 rounds to prevent runaway API costs.
-  const rounds = Math.min(Number.isFinite(roundsArg) && roundsArg > 0 ? roundsArg : 3, 20);
+  const MAX_ROUNDS = 20;
+  const requestedRounds = Number.isFinite(roundsArg) && roundsArg > 0 ? roundsArg : 3;
+  const rounds = Math.min(requestedRounds, MAX_ROUNDS);
+  if (requestedRounds > MAX_ROUNDS) {
+    console.log(`Warning: --rounds capped at maximum of ${MAX_ROUNDS} (requested: ${requestedRounds}).`);
+  }
 
   const isStatic = process.argv.includes("--static");
   const isRecursive = process.argv.includes("--recursive");
@@ -63,15 +67,21 @@ async function main() {
     console.error("Error: --sequential requires --swarm.");
     process.exit(1);
   }
+  if (isSwarm && isRecursive) {
+    console.log("Warning: --recursive is ignored in swarm mode. Swarm mode does not include novel attack generation.");
+  }
 
   // Verify required env vars
   if (!process.env.AGENTGATE_REST_KEY) {
     console.error("Error: AGENTGATE_REST_KEY not set in environment. Add it to .env or export it.");
     process.exit(1);
   }
-  if (!process.env.ANTHROPIC_API_KEY) {
+  if (!process.env.ANTHROPIC_API_KEY && !isStatic) {
     console.error("Error: ANTHROPIC_API_KEY not set in environment. Add it to .env or export it.");
     process.exit(1);
+  }
+  if (!process.env.ANTHROPIC_API_KEY && isStatic) {
+    console.log("Warning: ANTHROPIC_API_KEY not set. Report generation will be skipped.");
   }
 
   // Startup banner
@@ -146,6 +156,14 @@ async function main() {
     const report = await generateSwarmReport(result);
     console.log(report);
 
+    if (result.interrupted) {
+      console.log("");
+      console.log(`WARNING: Swarm campaign was interrupted after ${result.completedRounds}/${result.plannedRounds} round(s).`);
+      if (result.interruptionReason) {
+        console.log(`Reason: ${result.interruptionReason}`);
+      }
+    }
+
     // Print campaign summary
     console.log("");
     console.log("════════════════════════════════════════");
@@ -159,10 +177,11 @@ async function main() {
     console.log(`  Caught:          ${result.totalCaught}`);
     console.log(`  Uncaught:        ${result.totalUncaught}`);
     console.log(`  Intel log:       ${result.intelLog.getAllEntries().length} entries`);
+    console.log(`  Completed:       ${result.completedRounds}/${result.plannedRounds} rounds`);
     console.log("════════════════════════════════════════");
     console.log("");
 
-    process.exit(result.totalUncaught > 0 ? 1 : 0);
+    process.exit(result.interrupted || result.totalUncaught > 0 ? 1 : 0);
     return;
   }
 
@@ -567,10 +586,19 @@ async function main() {
   const caught = allResults.filter((r) => r.caught).length;
   const uncaught = allResults.filter((r) => !r.caught).length;
 
-  // Generate report
-  console.log("\nAll attacks complete. Generating report...\n");
-  const report = await generateReport(allResults, allStrategies);
-  console.log(report);
+  // Generate report (skip if no API key — static mode can run without it)
+  if (process.env.ANTHROPIC_API_KEY) {
+    console.log("\nAll attacks complete. Generating report...\n");
+    try {
+      const report = await generateReport(allResults, allStrategies);
+      console.log(report);
+    } catch (err) {
+      console.log(`\nReport generation failed: ${err instanceof Error ? err.message : String(err)}`);
+      console.log("Skipping report — results summary below.\n");
+    }
+  } else {
+    console.log("\nAll attacks complete. Report generation skipped (no ANTHROPIC_API_KEY).\n");
+  }
 
   // Final summary
   console.log("");
@@ -586,4 +614,7 @@ async function main() {
   process.exit(uncaught > 0 ? 1 : 0);
 }
 
-main();
+main().catch((err) => {
+  console.error(`\nFatal error: ${err instanceof Error ? err.message : String(err)}`);
+  process.exit(2);
+});

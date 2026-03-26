@@ -66,11 +66,20 @@ const TRUST_BUILDING_ACTIONS = [
 ];
 
 const OFFENSIVE_ACTIONS = [
-  { name: "highValueBondAttempt", description: "Attempt a 500¢ bond — tests if reputation unlocks higher capacity." },
   { name: "rapidExecutionBurst", description: "Burst of 8 rapid executions — tests if reputation provides rate-limit leniency." },
   { name: "resolveOtherIdentityAction", description: "Attempt to resolve another identity's action — tests cross-identity privileges. Requires a fresh identity as target." },
   { name: "postSlashRecovery", description: "Get slashed, then try to continue operating — tests reputation resilience after penalty." },
 ];
+
+/** Action names valid for each phase — used for runtime enforcement (not just prompt filtering). */
+export const TRUST_BUILDING_ACTION_NAMES = new Set(TRUST_BUILDING_ACTIONS.map((a) => a.name));
+export const OFFENSIVE_ACTION_NAMES = new Set(OFFENSIVE_ACTIONS.map((a) => a.name));
+
+/** Returns true if the action is valid for the given phase. */
+export function isActionValidForPhase(actionName: string, phase: BetaPhase): boolean {
+  const allowed = phase === "trust-building" ? TRUST_BUILDING_ACTION_NAMES : OFFENSIVE_ACTION_NAMES;
+  return allowed.has(actionName);
+}
 
 // ---------------------------------------------------------------------------
 // System prompts
@@ -215,12 +224,16 @@ export function parseBetaStrategyResponse(text: string, config: BetaStrategistCo
 
   // Valid agentIds for Beta team — reject cross-team references from Claude
   const validBetaIds = new Set(config.team.agents.map((a) => a.agentId));
+  const phase = getBetaPhase(config.currentRound, config.totalRounds);
+  const MAX_SELECTED_ACTIONS = 6;
 
   const selectedActions: BetaActionPick[] = [];
   for (const pick of obj.selectedActions) {
+    if (selectedActions.length >= MAX_SELECTED_ACTIONS) break;
     if (typeof pick !== "object" || pick === null) continue;
     const p = pick as Record<string, unknown>;
     if (typeof p.actionName !== "string" || typeof p.reasoning !== "string") continue;
+    if (!isActionValidForPhase(p.actionName, phase)) continue;
     const rawAgentId = typeof p.agentId === "string" ? p.agentId : config.team.agents[0].agentId;
     selectedActions.push({
       actionName: p.actionName,
@@ -231,7 +244,7 @@ export function parseBetaStrategyResponse(text: string, config: BetaStrategistCo
   }
 
   return {
-    phase: getBetaPhase(config.currentRound, config.totalRounds),
+    phase,
     round: config.currentRound,
     strategy: typeof obj.strategy === "string" ? obj.strategy : "No strategy provided",
     selectedActions,
@@ -257,9 +270,9 @@ export function getDefaultBetaActions(config: BetaStrategistConfig): BetaStrateg
     ];
   } else {
     selectedActions = [
-      { actionName: "highValueBondAttempt", agentId: agents[0].agentId, reasoning: "Fallback — test reputation-based capacity" },
-      { actionName: "rapidExecutionBurst", agentId: agents[1].agentId, reasoning: "Fallback — test rate-limit leniency" },
-      { actionName: "resolveOtherIdentityAction", agentId: agents[2].agentId, reasoning: "Fallback — test cross-identity privileges" },
+      { actionName: "rapidExecutionBurst", agentId: agents[0].agentId, reasoning: "Fallback — test rate-limit leniency" },
+      { actionName: "resolveOtherIdentityAction", agentId: agents[1].agentId, reasoning: "Fallback — test cross-identity privileges" },
+      { actionName: "postSlashRecovery", agentId: agents[2].agentId, reasoning: "Fallback — test post-slash resilience" },
     ];
   }
 

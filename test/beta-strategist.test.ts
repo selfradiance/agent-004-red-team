@@ -119,10 +119,10 @@ describe("beta-strategist — late round prompt", () => {
 
   it("includes offensive actions", () => {
     const prompt = buildBetaSystemPrompt(makeConfig({ currentRound: 4, totalRounds: 5 }));
-    expect(prompt).toContain("highValueBondAttempt");
     expect(prompt).toContain("rapidExecutionBurst");
     expect(prompt).toContain("resolveOtherIdentityAction");
     expect(prompt).toContain("postSlashRecovery");
+    expect(prompt).not.toContain("highValueBondAttempt");
   });
 
   it("does NOT include trust-building actions in late rounds", () => {
@@ -217,6 +217,28 @@ describe("beta-strategist — parseBetaStrategyResponse", () => {
     const config = makeConfig();
     expect(() => parseBetaStrategyResponse(JSON.stringify({ strategy: "test" }), config)).toThrow("missing 'selectedActions'");
   });
+
+  it("caps selected actions at 6 and filters invalid phase actions", () => {
+    const json = JSON.stringify({
+      round: 1,
+      strategy: "Build trust safely",
+      selectedActions: [
+        { actionName: "cleanBondCycle", agentId: "beta-1", reasoning: "1" },
+        { actionName: "multipleCleanCycles", agentId: "beta-2", reasoning: "2" },
+        { actionName: "checkReputation", agentId: "beta-3", reasoning: "3" },
+        { actionName: "rapidExecutionBurst", agentId: "beta-1", reasoning: "invalid for trust phase" },
+        { actionName: "cleanBondCycle", agentId: "beta-1", reasoning: "4" },
+        { actionName: "cleanBondCycle", agentId: "beta-2", reasoning: "5" },
+        { actionName: "cleanBondCycle", agentId: "beta-3", reasoning: "6" },
+        { actionName: "cleanBondCycle", agentId: "beta-1", reasoning: "7" },
+      ],
+    });
+
+    const result = parseBetaStrategyResponse(json, makeConfig({ currentRound: 1, totalRounds: 5 }));
+
+    expect(result.selectedActions).toHaveLength(6);
+    expect(result.selectedActions.every((action) => action.actionName !== "rapidExecutionBurst")).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -243,9 +265,9 @@ describe("beta-strategist — fallback", () => {
     expect(result.phase).toBe("offensive");
     expect(result.usedFallback).toBe(true);
     expect(result.selectedActions).toHaveLength(3);
-    expect(result.selectedActions[0].actionName).toBe("highValueBondAttempt");
-    expect(result.selectedActions[1].actionName).toBe("rapidExecutionBurst");
-    expect(result.selectedActions[2].actionName).toBe("resolveOtherIdentityAction");
+    expect(result.selectedActions[0].actionName).toBe("rapidExecutionBurst");
+    expect(result.selectedActions[1].actionName).toBe("resolveOtherIdentityAction");
+    expect(result.selectedActions[2].actionName).toBe("postSlashRecovery");
   });
 
   it("fallback distributes across all three agents", () => {

@@ -62,6 +62,9 @@ function makeCampaignResult(overrides: Partial<SwarmCampaignResult> = {}): Swarm
   return {
     rounds: [round],
     intelLog,
+    plannedRounds: 3,
+    completedRounds: 1,
+    interrupted: false,
     totalAttacks: 4,
     totalCaught: 2,
     totalUncaught: 2,
@@ -80,6 +83,8 @@ describe("swarm-reporter — buildSwarmUserMessage", () => {
     const parsed = JSON.parse(msg);
 
     expect(parsed.mode).toBe("swarm");
+    expect(parsed.totalRounds).toBe(3);
+    expect(parsed.completedRounds).toBe(1);
     expect(parsed.totalAttacks).toBe(4);
     expect(parsed.totalCaught).toBe(2);
     expect(parsed.totalUncaught).toBe(2);
@@ -120,7 +125,7 @@ describe("swarm-reporter — buildSwarmUserMessage", () => {
     const parsed = JSON.parse(msg);
 
     expect(parsed.coordinatorSyntheses).toHaveLength(1);
-    expect(parsed.coordinatorSyntheses[0].subject).toBe("round-1-synthesis");
+    expect(parsed.coordinatorSyntheses[0].subject).toBe('"round-1-synthesis"');
   });
 
   it("includes budget info", () => {
@@ -152,6 +157,21 @@ describe("swarm-reporter — buildSwarmUserMessage", () => {
     expect(betaResult.sideEffects.reputationBefore).toBe(0);
     expect(betaResult.sideEffects.reputationAfter).toBe(10);
   });
+
+  it("includes interruption metadata", () => {
+    const msg = buildSwarmUserMessage(makeCampaignResult({
+      interrupted: true,
+      interruptionReason: "Coordinator failure",
+      completedRounds: 1,
+      plannedRounds: 5,
+    }));
+    const parsed = JSON.parse(msg);
+
+    expect(parsed.interrupted).toBe(true);
+    expect(parsed.interruptionReason).toBe("Coordinator failure");
+    expect(parsed.completedRounds).toBe(1);
+    expect(parsed.totalRounds).toBe(5);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -167,6 +187,8 @@ describe("swarm-reporter — buildFallbackReport", () => {
 
   it("includes campaign overview numbers", () => {
     const report = buildFallbackReport(makeCampaignResult());
+    expect(report).toContain("Planned rounds: 3");
+    expect(report).toContain("Completed rounds: 1");
     expect(report).toContain("Total attacks: 4");
     expect(report).toContain("Caught: 2");
     expect(report).toContain("Uncaught: 2");
@@ -195,6 +217,15 @@ describe("swarm-reporter — buildFallbackReport", () => {
   it("includes intel log entry count", () => {
     const report = buildFallbackReport(makeCampaignResult());
     expect(report).toContain("Intel log entries:");
+  });
+
+  it("includes interruption reason when campaign was interrupted", () => {
+    const report = buildFallbackReport(makeCampaignResult({
+      interrupted: true,
+      interruptionReason: "planner crashed",
+    }));
+
+    expect(report).toContain("Interrupted: yes (planner crashed)");
   });
 
   it("handles campaign with zero uncaught", () => {

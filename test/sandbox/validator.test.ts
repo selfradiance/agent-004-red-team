@@ -64,6 +64,14 @@ describe("validator — blocklist", () => {
     expect(result.valid).toBe(false);
     expect(result.reason).toContain("atob(");
   });
+
+  it("rejects code with comment-obfuscated dynamic import", () => {
+    const result = validateGeneratedCode(
+      `async function novelAttack(toolkit) { await import/*x*/("node:process"); return { caught: false, reason: "bad" }; }`,
+    );
+    expect(result.valid).toBe(false);
+    expect(result.reason).toContain("dynamic import");
+  });
 });
 
 describe("validator — structural checks", () => {

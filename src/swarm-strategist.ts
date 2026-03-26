@@ -210,9 +210,11 @@ export function parseSwarmStrategyResponse(text: string, teamName: SwarmTeamName
 
   // Valid agentIds for this team — reject cross-team references from Claude
   const validAgentIds = new Set([`${teamName}-1`, `${teamName}-2`, `${teamName}-3`]);
+  const MAX_SELECTED_ATTACKS = 10;
 
   const selectedAttacks: SwarmAttackPick[] = [];
   for (const pick of obj.selectedAttacks) {
+    if (selectedAttacks.length >= MAX_SELECTED_ATTACKS) break;
     if (typeof pick !== "object" || pick === null) continue;
     const p = pick as Record<string, unknown>;
     if (typeof p.id !== "string" || typeof p.reasoning !== "string") continue;
@@ -225,9 +227,11 @@ export function parseSwarmStrategyResponse(text: string, teamName: SwarmTeamName
     });
   }
 
+  const MAX_QUESTIONS_PER_TEAM = 5;
   const questionsForIntelLog: IntelQuestion[] = [];
   const rawQuestions = Array.isArray(obj.questionsForIntelLog) ? obj.questionsForIntelLog : [];
   for (const q of rawQuestions) {
+    if (questionsForIntelLog.length >= MAX_QUESTIONS_PER_TEAM) break;
     if (typeof q !== "object" || q === null) continue;
     const qObj = q as Record<string, unknown>;
     if (typeof qObj.subject !== "string" || typeof qObj.content !== "string") continue;

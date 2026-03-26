@@ -218,20 +218,28 @@ export async function pickAttacks(
   priorResults: AttackResult[],
 ): Promise<StrategyResponse> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error("ANTHROPIC_API_KEY not set — cannot call strategist");
+  if (!apiKey) {
+    return getDefaultAttacks(library, round);
+  }
 
-  const client = new Anthropic({ apiKey });
-  const response = await client.messages.create({
-    model: "claude-sonnet-4-20250514",
-    max_tokens: 2000,
-    system: SYSTEM_PROMPT,
-    messages: [{ role: "user", content: buildUserMessage(library, round, totalRounds, priorResults) }],
-  });
+  try {
+    const client = new Anthropic({ apiKey });
+    const response = await client.messages.create({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 2000,
+      system: SYSTEM_PROMPT,
+      messages: [{ role: "user", content: buildUserMessage(library, round, totalRounds, priorResults) }],
+    });
 
-  const textBlock = response.content.find((block) => block.type === "text");
-  if (!textBlock || textBlock.type !== "text") throw new Error("No text response from Claude API");
+    const textBlock = response.content.find((block) => block.type === "text");
+    if (!textBlock || textBlock.type !== "text") {
+      return getDefaultAttacks(library, round);
+    }
 
-  return parseStrategyResponse(textBlock.text);
+    return parseStrategyResponse(textBlock.text);
+  } catch {
+    return getDefaultAttacks(library, round);
+  }
 }
 
 export function getDefaultAttacks(library: LibraryEntry[], round: number): StrategyResponse {
@@ -446,20 +454,28 @@ export async function pickTeamAttacks(
   perPersonaResults: Map<string, AttackResult[]>,
 ): Promise<TeamStrategyResponse> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error("ANTHROPIC_API_KEY not set — cannot call strategist");
+  if (!apiKey) {
+    return getDefaultTeamAttacks(library, round, team);
+  }
 
-  const client = new Anthropic({ apiKey });
-  const response = await client.messages.create({
-    model: "claude-sonnet-4-20250514",
-    max_tokens: 4000,
-    system: TEAM_SYSTEM_PROMPT,
-    messages: [{ role: "user", content: buildTeamUserMessage(library, round, totalRounds, team, perPersonaResults) }],
-  });
+  try {
+    const client = new Anthropic({ apiKey });
+    const response = await client.messages.create({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 4000,
+      system: TEAM_SYSTEM_PROMPT,
+      messages: [{ role: "user", content: buildTeamUserMessage(library, round, totalRounds, team, perPersonaResults) }],
+    });
 
-  const textBlock = response.content.find((block) => block.type === "text");
-  if (!textBlock || textBlock.type !== "text") throw new Error("No text response from Claude API");
+    const textBlock = response.content.find((block) => block.type === "text");
+    if (!textBlock || textBlock.type !== "text") {
+      return getDefaultTeamAttacks(library, round, team);
+    }
 
-  return parseTeamStrategyResponse(textBlock.text);
+    return parseTeamStrategyResponse(textBlock.text);
+  } catch {
+    return getDefaultTeamAttacks(library, round, team);
+  }
 }
 
 // ---------------------------------------------------------------------------

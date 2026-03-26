@@ -119,6 +119,14 @@ describe("child-runner sandbox", () => {
     expect(result.error).toMatch(/process.*not.*defined|Cannot read/i);
   });
 
+  it("blocks dynamic import at runtime", async () => {
+    const result = await runInChild(
+      `async function novelAttack(toolkit) { await import/*x*/("node:process"); return { caught: false, reason: "should not reach" }; }`,
+    );
+    expect(result.type).toBe("error");
+    expect(result.error).toContain("Dynamic import blocked by runtime guard");
+  });
+
   it("enforces createIdentity cap at 3", async () => {
     const result = await runInChild(
       `async function novelAttack(toolkit) {

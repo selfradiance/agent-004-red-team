@@ -90,17 +90,21 @@ export async function cleanBondCycle(
 /**
  * Run multiple clean bond cycles in sequence to build standing faster.
  */
+const MAX_CLEAN_CYCLES = 10;
+
 export async function multipleCleanCycles(
   identity: BetaIdentity,
   resolver: BetaIdentity,
   targetUrl: string,
   count: number = 3,
 ): Promise<BetaTaskResult> {
+  // Cap iteration count to prevent unbounded API calls from Claude hallucination
+  const safeCount = Math.min(Math.max(1, Math.floor(count)), MAX_CLEAN_CYCLES);
   const repBefore = await getReputation(targetUrl, identity.identityId);
   const results: string[] = [];
   let failures = 0;
 
-  for (let i = 0; i < count; i++) {
+  for (let i = 0; i < safeCount; i++) {
     const result = await cleanBondCycle(identity, resolver, targetUrl);
     results.push(`Cycle ${i + 1}: ${result.caught ? "FAILED" : "OK"}`);
     if (result.caught) failures++;
@@ -110,8 +114,8 @@ export async function multipleCleanCycles(
 
   return {
     actionName: "multipleCleanCycles",
-    caught: failures === count,
-    details: `${count} cycles attempted, ${count - failures} succeeded, ${failures} failed. ${results.join("; ")}`,
+    caught: failures === safeCount,
+    details: `${safeCount} cycles attempted${safeCount !== count ? ` (capped from ${count})` : ""}, ${safeCount - failures} succeeded, ${failures} failed. ${results.join("; ")}`,
     reputationBefore: repBefore,
     reputationAfter: repAfter,
   };

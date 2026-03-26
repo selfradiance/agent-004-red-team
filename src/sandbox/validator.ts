@@ -50,6 +50,17 @@ const BLOCKLIST = [
   "worker_threads",
 ];
 
+const BLOCKLIST_REGEXPS: Array<{ pattern: RegExp; reason: string }> = [
+  {
+    // Catches comment/whitespace-obfuscated dynamic imports like:
+    //   import/*x*/("node:process")
+    //   import // note
+    //   ("node:fs")
+    pattern: /\bimport(?:\s|\/\*[\s\S]*?\*\/|\/\/[^\n]*(?:\n|$))*\(/,
+    reason: "dynamic import",
+  },
+];
+
 const OBFUSCATION_PATTERNS = [
   "fromCharCode",
   "atob(",
@@ -83,6 +94,12 @@ export function validateGeneratedCode(code: string): ValidationResult {
   for (const pattern of BLOCKLIST) {
     if (code.includes(pattern)) {
       return { valid: false, reason: `Blocked pattern found: ${pattern}` };
+    }
+  }
+
+  for (const { pattern, reason } of BLOCKLIST_REGEXPS) {
+    if (pattern.test(code)) {
+      return { valid: false, reason: `Blocked pattern found: ${reason}` };
     }
   }
 

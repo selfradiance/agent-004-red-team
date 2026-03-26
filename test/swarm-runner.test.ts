@@ -10,6 +10,8 @@ import {
   aggregateCampaignResults,
   printSwarmRoundSummary,
   printCampaignBanner,
+  BudgetTracker,
+  estimateActionCost,
 } from "../src/swarm-runner";
 import { IntelLog } from "../src/intel-log";
 
@@ -301,6 +303,9 @@ describe("swarm-runner — aggregateCampaignResults", () => {
 
     const result = aggregateCampaignResults(rounds, intelLog);
 
+    expect(result.plannedRounds).toBe(2);
+    expect(result.completedRounds).toBe(2);
+    expect(result.interrupted).toBe(false);
     expect(result.totalAttacks).toBe(6);
     expect(result.totalCaught).toBe(3);
     expect(result.totalUncaught).toBe(3);
@@ -325,6 +330,9 @@ describe("swarm-runner — aggregateCampaignResults", () => {
     const intelLog = new IntelLog();
     const result = aggregateCampaignResults([], intelLog);
 
+    expect(result.plannedRounds).toBe(0);
+    expect(result.completedRounds).toBe(0);
+    expect(result.interrupted).toBe(false);
     expect(result.totalAttacks).toBe(0);
     expect(result.totalCaught).toBe(0);
     expect(result.totalUncaught).toBe(0);
@@ -350,6 +358,19 @@ describe("swarm-runner — aggregateCampaignResults", () => {
     expect(result.rounds).toHaveLength(2);
     expect(result.rounds[0].coordinatorSynthesis).toBe(false);
     expect(result.rounds[1].coordinatorSynthesis).toBe(true);
+  });
+
+  it("preserves interruption metadata when provided", () => {
+    const result = aggregateCampaignResults([], new IntelLog(), {
+      plannedRounds: 5,
+      interrupted: true,
+      interruptionReason: "unexpected failure",
+    });
+
+    expect(result.plannedRounds).toBe(5);
+    expect(result.completedRounds).toBe(0);
+    expect(result.interrupted).toBe(true);
+    expect(result.interruptionReason).toBe("unexpected failure");
   });
 });
 
@@ -415,5 +436,116 @@ describe("swarm-runner — print helpers", () => {
 
     console.log = origLog;
     expect(logs.some((l) => l.includes("sequential"))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// BudgetTracker
+// ---------------------------------------------------------------------------
+
+describe("swarm-runner — BudgetTracker", () => {
+  function makeTracker(agentBudgets: Record<string, number>, campaignCap: number): BudgetTracker {
+    return new BudgetTracker(new Map(Object.entries(agentBudgets)), campaignCap);
+  }
+
+  it("canAfford returns true when budget is available", () => {
+    const tracker = makeTracker({ "alpha-1": 50 }, 900);
+    expect(tracker.canAfford("alpha-1", 10)).toBe(true);
+  });
+
+  it("canAfford returns false when per-agent budget is exhausted", () => {
+    const tracker = makeTracker({ "alpha-1": 50 }, 900);
+    tracker.recordSpend("alpha-1", 45);
+    expect(tracker.canAfford("alpha-1", 10)).toBe(false);
+  });
+
+  it("canAfford returns false when campaign budget is exhausted", () => {
+    const tracker = makeTracker({ "alpha-1": 500, "gamma-1": 500 }, 100);
+    tracker.recordSpend("alpha-1", 90);
+    // Agent alpha-1 has 410¢ left, but campaign only has 10¢ left
+    expect(tracker.canAfford("alpha-1", 15)).toBe(false);
+  });
+
+  it("recordSpend correctly decrements per-agent and campaign budgets", () => {
+    const tracker = makeTracker({ "beta-1": 100 }, 900);
+    tracker.recordSpend("beta-1", 25);
+    expect(tracker.getAgentSpent("beta-1")).toBe(25);
+    expect(tracker.getCampaignSpent()).toBe(25);
+
+    tracker.recordSpend("beta-1", 30);
+    expect(tracker.getAgentSpent("beta-1")).toBe(55);
+    expect(tracker.getCampaignSpent()).toBe(55);
+  });
+
+  it("recordSpend for one agent does not affect another agent's budget", () => {
+    const tracker = makeTracker({ "alpha-1": 50, "alpha-2": 50 }, 900);
+    tracker.recordSpend("alpha-1", 40);
+
+    expect(tracker.getAgentSpent("alpha-1")).toBe(40);
+    expect(tracker.getAgentSpent("alpha-2")).toBe(0);
+    expect(tracker.canAfford("alpha-2", 50)).toBe(true);
+  });
+
+  it("recordSpend with 0 cost is a no-op", () => {
+    const tracker = makeTracker({ "alpha-1": 50 }, 900);
+    tracker.recordSpend("alpha-1", 0);
+    expect(tracker.getAgentSpent("alpha-1")).toBe(0);
+    expect(tracker.getCampaignSpent()).toBe(0);
+    expect(tracker.canAfford("alpha-1", 50)).toBe(true);
+  });
+
+  it("canAfford returns false after exact budget exhaustion", () => {
+    const tracker = makeTracker({ "gamma-1": 150 }, 900);
+    tracker.recordSpend("gamma-1", 150);
+    expect(tracker.canAfford("gamma-1", 1)).toBe(false);
+    // Even 0-cost should still work
+    expect(tracker.canAfford("gamma-1", 0)).toBe(true);
+  });
+
+  it("canAfford returns 0 budget for unknown agent", () => {
+    const tracker = makeTracker({ "alpha-1": 50 }, 900);
+    // Unknown agent has 0 budget, so any positive cost should fail
+    expect(tracker.canAfford("unknown-agent", 1)).toBe(false);
+    expect(tracker.canAfford("unknown-agent", 0)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// estimateActionCost
+// ---------------------------------------------------------------------------
+
+describe("swarm-runner — estimateActionCost", () => {
+  it("returns 10 for cleanBondCycle", () => {
+    expect(estimateActionCost("cleanBondCycle")).toBe(10);
+  });
+
+  it("returns count * 10 for multipleCleanCycles", () => {
+    expect(estimateActionCost("multipleCleanCycles", { count: 4 })).toBe(40);
+  });
+
+  it("caps multipleCleanCycles at 10 iterations", () => {
+    expect(estimateActionCost("multipleCleanCycles", { count: 50 })).toBe(100);
+  });
+
+  it("defaults multipleCleanCycles count to 3 when not provided", () => {
+    expect(estimateActionCost("multipleCleanCycles")).toBe(30);
+  });
+
+  it("returns 0 for checkReputation", () => {
+    expect(estimateActionCost("checkReputation")).toBe(0);
+  });
+
+  it("returns 500 for highValueBondAttempt", () => {
+    expect(estimateActionCost("highValueBondAttempt")).toBe(500);
+  });
+
+  it("returns 100 (default) for unknown action names", () => {
+    expect(estimateActionCost("1.1")).toBe(100);
+    expect(estimateActionCost("some-unknown-attack")).toBe(100);
+  });
+
+  it("uses scenario-specific conservative estimates for expensive registry attacks", () => {
+    expect(estimateActionCost("6.3")).toBe(5000);
+    expect(estimateActionCost("10.3", { position_count: 7 })).toBe(70);
   });
 });

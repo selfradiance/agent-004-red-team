@@ -10,6 +10,8 @@
 
 "use strict";
 
+const DYNAMIC_IMPORT_PATTERN = /\bimport(?:\s|\/\*[\s\S]*?\*\/|\/\/[^\n]*(?:\n|$))*\(/;
+
 // ---------------------------------------------------------------------------
 // Step 1: Capture essentials before we delete everything
 // ---------------------------------------------------------------------------
@@ -17,6 +19,10 @@
 const _send = process.send.bind(process);
 const _on = process.on.bind(process);
 const _Function = Function;
+
+// Even if untrusted code recovers the process object indirectly, do not expose raw IPC.
+process.send = undefined;
+process.disconnect = undefined;
 
 // ---------------------------------------------------------------------------
 // Step 2: Delete dangerous globals
@@ -171,6 +177,9 @@ _on("message", async (msg) => {
     }
 
     try {
+      if (DYNAMIC_IMPORT_PATTERN.test(msg.code)) {
+        throw new Error("Dynamic import blocked by runtime guard");
+      }
       const fn = new _Function("toolkit", msg.code + "\nreturn novelAttack(toolkit);");
       const result = await fn(toolkit);
       _send({ type: "result", result });

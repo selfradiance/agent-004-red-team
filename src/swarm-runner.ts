@@ -14,7 +14,7 @@ import { getScenario } from "./registry";
 import { buildLibraryMenu } from "./strategist";
 import { pickSwarmAttacks, submitTeamQuestions, getDefaultSwarmAttacks } from "./swarm-strategist";
 import { synthesizeIntelligence } from "./coordinator";
-import { pickBetaActions, getBetaPhase, type BetaStrategistConfig, type ReputationSnapshot, type BetaActionPick } from "./beta-strategist";
+import { pickBetaActions, getBetaPhase, isActionValidForPhase, type BetaStrategistConfig, type ReputationSnapshot, type BetaActionPick } from "./beta-strategist";
 import { cleanBondCycle, multipleCleanCycles, checkReputation, highValueBondAttempt, rapidExecutionBurst, resolveOtherIdentityAction, postSlashRecovery, type BetaIdentity, type BetaTaskResult } from "./beta-tasks";
 
 // ---------------------------------------------------------------------------
@@ -51,6 +51,10 @@ export interface TeamSummary {
 export interface SwarmCampaignResult {
   rounds: SwarmRoundResult[];
   intelLog: IntelLog;
+  plannedRounds: number;
+  completedRounds: number;
+  interrupted: boolean;
+  interruptionReason?: string;
   totalAttacks: number;
   totalCaught: number;
   totalUncaught: number;
@@ -272,6 +276,11 @@ export function printSwarmRoundSummary(roundNumber: number, results: SwarmAttack
 export function aggregateCampaignResults(
   rounds: SwarmRoundResult[],
   intelLog: IntelLog,
+  options?: {
+    plannedRounds?: number;
+    interrupted?: boolean;
+    interruptionReason?: string;
+  },
 ): SwarmCampaignResult {
   const perTeamSummary = new Map<SwarmTeamName, TeamSummary>();
   let totalAttacks = 0;
@@ -299,6 +308,10 @@ export function aggregateCampaignResults(
   return {
     rounds,
     intelLog,
+    plannedRounds: options?.plannedRounds ?? rounds.length,
+    completedRounds: rounds.length,
+    interrupted: options?.interrupted ?? false,
+    interruptionReason: options?.interruptionReason,
     totalAttacks,
     totalCaught,
     totalUncaught,
@@ -362,10 +375,30 @@ function pickBetaResolver(executorAgentId: string, identities: Map<string, Swarm
 async function executeBetaAction(
   pick: BetaActionPick,
   roundNumber: number,
+  totalRounds: number,
   position: number,
   identities: Map<string, SwarmAgentIdentity>,
   targetUrl: string,
 ): Promise<SwarmAttackResult> {
+  // Phase enforcement: reject actions that don't belong to the current phase
+  const phase = getBetaPhase(roundNumber, totalRounds);
+  if (!isActionValidForPhase(pick.actionName, phase)) {
+    console.log(`  [Round ${roundNumber}] [beta/${pick.agentId}] REJECTED ${pick.actionName} — not valid for ${phase} phase`);
+    return {
+      scenarioId: `beta:${pick.actionName}`,
+      scenarioName: pick.actionName,
+      category: "Beta Trust",
+      expectedOutcome: "N/A",
+      actualOutcome: `Action ${pick.actionName} rejected: not valid for ${phase} phase`,
+      caught: true,
+      details: `Phase enforcement: ${pick.actionName} is not allowed during ${phase} phase (round ${roundNumber}/${totalRounds}).`,
+      teamName: "beta",
+      agentId: pick.agentId,
+      roundNumber,
+      executionPosition: position,
+    };
+  }
+
   const identity = identities.get(pick.agentId);
   if (!identity) {
     return {
@@ -426,7 +459,10 @@ async function executeBetaAction(
         break;
       case "resolveOtherIdentityAction": {
         // Use beta-1 as trusted, beta-3 as fresh (or pick.params.freshAgentId)
-        const freshAgentId = (pick.params?.freshAgentId as string) ?? "beta-3";
+        const VALID_BETA_IDS = new Set(["beta-1", "beta-2", "beta-3"]);
+        const rawFreshId = (pick.params?.freshAgentId as string) ?? "beta-3";
+        // Validate freshAgentId belongs to Beta team — prevent cross-team identity leak
+        const freshAgentId = VALID_BETA_IDS.has(rawFreshId) ? rawFreshId : "beta-3";
         const freshIdentity = identities.get(freshAgentId);
         if (!freshIdentity) {
           result = { actionName: pick.actionName, caught: true, details: `Fresh identity ${freshAgentId} not found`, reputationBefore: null, reputationAfter: null };
@@ -477,6 +513,118 @@ async function executeBetaAction(
 }
 
 // ---------------------------------------------------------------------------
+// Budget tracker — enforces per-agent and campaign spending caps at runtime
+// ---------------------------------------------------------------------------
+
+/**
+ * Estimates the bond cost of an attack/action based on its name and params.
+ * This is a conservative estimate — actual AgentGate charges may differ,
+ * but this prevents runaway spending locally before requests are made.
+ */
+type CostEstimator = number | ((params?: Record<string, unknown>) => number);
+
+const DEFAULT_REGISTRY_COST_CENTS = 100;
+
+function getNonNegativeIntParam(
+  params: Record<string, unknown> | undefined,
+  key: string,
+  fallback: number,
+): number {
+  const value = params?.[key];
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fallback;
+  }
+
+  return Math.max(0, Math.ceil(value));
+}
+
+const REGISTRY_COST_ESTIMATORS: Record<string, CostEstimator> = {
+  "2.4": 0,
+  "4.1": 0,
+  "4.4": 0,
+  "4.5": (params) => 100 * (getNonNegativeIntParam(params, "malicious_count", 3) + 1),
+  "5.3": 0,
+  "5.4": 0,
+  "6.1": (params) => {
+    const requestCount = getNonNegativeIntParam(params, "request_count", 11);
+    const exposurePerRequest = getNonNegativeIntParam(params, "exposure_per_request", 10);
+    return requestCount * exposurePerRequest * 2;
+  },
+  "6.2": (params) => getNonNegativeIntParam(params, "identity_count", 3) * 1000,
+  "6.3": 5000,
+  "7.3": 0,
+  "9.1": 0,
+  "9.2": 0,
+  "9.3": 0,
+  "10.1": 0,
+  "10.2": 0,
+  "10.3": (params) => getNonNegativeIntParam(params, "position_count", 20) * 10,
+  "10.4": 10,
+  "11.1": (params) =>
+    (getNonNegativeIntParam(params, "pump_count", 10) * getNonNegativeIntParam(params, "bond_amount_cents", 1)) + 1000,
+  "11.2": (params) => getNonNegativeIntParam(params, "identity_count", 5) * 500,
+  "11.3": (params) => getNonNegativeIntParam(params, "identity_count", 5) * 100,
+  "12.1": 0,
+};
+
+function estimateRegistryAttackCost(scenarioId: string, params?: Record<string, unknown>): number {
+  const estimator = REGISTRY_COST_ESTIMATORS[scenarioId];
+  const estimatedCost = typeof estimator === "function"
+    ? estimator(params)
+    : estimator ?? DEFAULT_REGISTRY_COST_CENTS;
+  return Math.max(0, Math.ceil(estimatedCost));
+}
+
+export function estimateActionCost(actionNameOrId: string, params?: Record<string, unknown>): number {
+  // Beta trust-building actions
+  if (actionNameOrId === "cleanBondCycle") return 10;
+  if (actionNameOrId === "multipleCleanCycles") {
+    const count = Math.min((params?.count as number) ?? 3, 10);
+    return 10 * count; // 10¢ per cycle
+  }
+  if (actionNameOrId === "checkReputation") return 0;
+  // Beta offensive actions
+  if (actionNameOrId === "highValueBondAttempt") return 500;
+  if (actionNameOrId === "rapidExecutionBurst") return 50;
+  if (actionNameOrId === "resolveOtherIdentityAction") return 10;
+  if (actionNameOrId === "postSlashRecovery") return 20; // 10¢ slash + 10¢ recovery
+  return estimateRegistryAttackCost(actionNameOrId, params);
+}
+
+export class BudgetTracker {
+  private agentSpent = new Map<string, number>();
+  private campaignSpent = 0;
+
+  constructor(
+    private agentBudgets: Map<string, number>,
+    private campaignCap: number,
+  ) {}
+
+  /** Returns true if the agent can afford the estimated cost. */
+  canAfford(agentId: string, estimatedCost: number): boolean {
+    const agentBudget = this.agentBudgets.get(agentId) ?? 0;
+    const agentSpent = this.agentSpent.get(agentId) ?? 0;
+    if (agentSpent + estimatedCost > agentBudget) return false;
+    if (this.campaignSpent + estimatedCost > this.campaignCap) return false;
+    return true;
+  }
+
+  /** Record spending after an action executes. */
+  recordSpend(agentId: string, cost: number): void {
+    this.agentSpent.set(agentId, (this.agentSpent.get(agentId) ?? 0) + cost);
+    this.campaignSpent += cost;
+  }
+
+  getAgentSpent(agentId: string): number {
+    return this.agentSpent.get(agentId) ?? 0;
+  }
+
+  getCampaignSpent(): number {
+    return this.campaignSpent;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Main campaign loop
 // ---------------------------------------------------------------------------
 
@@ -488,6 +636,15 @@ export async function runSwarmCampaign(config: SwarmCampaignConfig): Promise<Swa
   const library = buildLibraryMenu();
   const rounds: SwarmRoundResult[] = [];
 
+  // Budget enforcement — build per-agent budget map from config
+  const agentBudgets = new Map<string, number>();
+  for (const team of swarmConfig.teams) {
+    for (const agent of team.agents) {
+      agentBudgets.set(agent.agentId, agent.bondBudgetCents);
+    }
+  }
+  const budgetTracker = new BudgetTracker(agentBudgets, swarmConfig.campaignCapCents);
+
   // All prior results per team (across rounds)
   const allPriorResults = new Map<SwarmTeamName, AttackResult[]>();
   for (const team of swarmConfig.teams) {
@@ -497,9 +654,12 @@ export async function runSwarmCampaign(config: SwarmCampaignConfig): Promise<Swa
   // Beta-specific state
   const betaPriorResults: string[] = [];
   const betaReputationData: ReputationSnapshot[] = [];
+  let interrupted = false;
+  let interruptionReason: string | undefined;
 
   printCampaignBanner(config);
 
+  try {
   for (let round = 1; round <= totalRounds; round++) {
     console.log("");
     console.log("═══════════════════════════════════════════");
@@ -613,8 +773,31 @@ export async function runSwarmCampaign(config: SwarmCampaignConfig): Promise<Swa
         betaActionIndex++;
 
         if (betaPick) {
-          const result = await executeBetaAction(betaPick, round, i, identities, targetUrl);
+          // Budget check before execution
+          const estCost = estimateActionCost(betaPick.actionName, betaPick.params);
+          if (!budgetTracker.canAfford(betaPick.agentId, estCost)) {
+            console.log(`  [Round ${round}] [beta/${betaPick.agentId}] SKIPPED ${betaPick.actionName} — budget exceeded (spent ${budgetTracker.getAgentSpent(betaPick.agentId)}¢, est ${estCost}¢)`);
+            roundResults.push({
+              scenarioId: `beta:${betaPick.actionName}`,
+              scenarioName: betaPick.actionName,
+              category: "Beta Trust",
+              expectedOutcome: "N/A",
+              actualOutcome: `Budget exceeded for ${betaPick.agentId}`,
+              caught: true,
+              details: `Budget enforcement: agent ${betaPick.agentId} has spent ${budgetTracker.getAgentSpent(betaPick.agentId)}¢, action costs ~${estCost}¢.`,
+              teamName: "beta",
+              agentId: betaPick.agentId,
+              roundNumber: round,
+              executionPosition: i,
+            });
+            continue;
+          }
+
+          const result = await executeBetaAction(betaPick, round, totalRounds, i, identities, targetUrl);
           roundResults.push(result);
+
+          // Record spending
+          budgetTracker.recordSpend(betaPick.agentId, estCost);
 
           // Write Beta trust-building results to intel log as observations
           const phase = getBetaPhase(round, totalRounds);
@@ -643,9 +826,32 @@ export async function runSwarmCampaign(config: SwarmCampaignConfig): Promise<Swa
           }
         }
       } else {
+        // Budget check before execution for Alpha/Gamma
+        const estCost = estimateActionCost(attack.pick.id, attack.pick.params);
+        if (!budgetTracker.canAfford(attack.agentId, estCost)) {
+          console.log(`  [Round ${round}] [${attack.teamName}/${attack.agentId}] SKIPPED ${attack.pick.id} — budget exceeded (spent ${budgetTracker.getAgentSpent(attack.agentId)}¢, est ${estCost}¢)`);
+          roundResults.push({
+            scenarioId: attack.pick.id,
+            scenarioName: "BUDGET_EXCEEDED",
+            category: "BUDGET",
+            expectedOutcome: "N/A",
+            actualOutcome: `Budget exceeded for ${attack.agentId}`,
+            caught: true,
+            details: `Budget enforcement: agent ${attack.agentId} has spent ${budgetTracker.getAgentSpent(attack.agentId)}¢, action costs ~${estCost}¢.`,
+            teamName: attack.teamName,
+            agentId: attack.agentId,
+            roundNumber: round,
+            executionPosition: i,
+          });
+          continue;
+        }
+
         // Normal attack execution for Alpha/Gamma
         const result = await executeQueuedAttack(attack, i, round, identities, targetUrl, apiKey);
         roundResults.push(result);
+
+        // Record spending
+        budgetTracker.recordSpend(attack.agentId, estCost);
       }
     }
 
@@ -688,6 +894,16 @@ export async function runSwarmCampaign(config: SwarmCampaignConfig): Promise<Swa
     // (h) Print round summary
     printSwarmRoundSummary(round, roundResults);
   }
+  } catch (err) {
+    interruptionReason = err instanceof Error ? err.message : String(err);
+    interrupted = true;
+    console.error(`\n  *** Campaign interrupted in round ${rounds.length + 1}: ${interruptionReason}`);
+    console.error(`  *** Returning partial results from ${rounds.length} completed round(s).`);
+  }
 
-  return aggregateCampaignResults(rounds, intelLog);
+  return aggregateCampaignResults(rounds, intelLog, {
+    plannedRounds: totalRounds,
+    interrupted,
+    interruptionReason,
+  });
 }

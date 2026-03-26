@@ -42,7 +42,7 @@ export interface SwarmAgentIdentity {
 // Configuration
 // ---------------------------------------------------------------------------
 
-const AGENT_BUDGETS: Record<SwarmTeamName, number> = {
+export const AGENT_BUDGETS: Record<SwarmTeamName, number> = {
   alpha: 50,
   beta: 100,
   gamma: 150,
@@ -54,7 +54,8 @@ const TEAM_OBJECTIVES: Record<SwarmTeamName, string> = {
   gamma: "Coordinated pressure — synchronized attacks to overwhelm per-identity defenses",
 };
 
-const CAMPAIGN_CAP_CENTS = 900;
+export const CAMPAIGN_CAP_CENTS = 900;
+const SWARM_REQUEST_TIMEOUT_MS = 10_000;
 
 function buildAgentConfig(team: SwarmTeamName, index: number): SwarmAgentConfig {
   const agentId = `${team}-${index}`;
@@ -163,18 +164,31 @@ async function registerIdentityOnAgentGate(
   const apiPath = "/v1/identities";
   const body = { publicKey: keys.publicKey };
   const signature = signRequest(keys.publicKey, keys.privateKey, nonce, "POST", apiPath, timestamp, body);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), SWARM_REQUEST_TIMEOUT_MS);
 
-  const response = await fetch(new URL(apiPath, agentGateUrl), {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-nonce": nonce,
-      "x-agentgate-key": restKey,
-      "x-agentgate-timestamp": timestamp,
-      "x-agentgate-signature": signature,
-    },
-    body: JSON.stringify(body),
-  });
+  let response: Response;
+  try {
+    response = await fetch(new URL(apiPath, agentGateUrl), {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-nonce": nonce,
+        "x-agentgate-key": restKey,
+        "x-agentgate-timestamp": timestamp,
+        "x-agentgate-signature": signature,
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error(`Swarm identity registration timed out after ${SWARM_REQUEST_TIMEOUT_MS / 1000}s`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
 
   const data = await response.json() as Record<string, unknown>;
 
