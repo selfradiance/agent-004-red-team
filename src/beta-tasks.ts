@@ -46,19 +46,19 @@ export async function cleanBondCycle(
   const repBefore = await getReputation(targetUrl, identity.identityId);
 
   try {
-    // Step 1: Lock a small bond
-    const bondData = await postBond(identity.keys, identity.identityId, 10, 60, "Legitimate operation — trust building");
+    // Step 1: Lock bond at Tier 1 cap (100¢)
+    const bondData = await postBond(identity.keys, identity.identityId, 100, 60, "Legitimate operation — trust building");
 
     const bondId = bondData.bondId as string;
 
-    // Step 2: Execute a valid action within bond capacity
+    // Step 2: Execute with 83¢ declared exposure (83 × 1.2 = 99.6¢ effective, ≤ 100¢ bond)
     const actionData = await executeBondedAction(
       identity.keys,
       identity.identityId,
       bondId,
       "data_query",
       { query: "status_check", timestamp: Date.now() },
-      5,
+      83,
     );
 
     const actionId = actionData.actionId as string;
@@ -146,11 +146,9 @@ export async function checkReputation(
 // ---------------------------------------------------------------------------
 
 /**
- * Attempt to lock a bond significantly larger than the normal agent budget.
- * Tests whether ANY bond capacity limit exists — not whether trust unlocks
- * higher caps. Verified: AgentGate accepts 500¢ from fresh identities with
- * zero history, so acceptance here is an identity-agnostic capacity gap,
- * not a reputation-based privilege escalation.
+ * Attempt to lock a 500¢ bond — the Tier 2 cap. This should only succeed
+ * after trust-building promotes Beta to Tier 2. If the identity is still
+ * Tier 1 (100¢ cap), AgentGate rejects with TIER_BOND_CAP_EXCEEDED.
  */
 export async function highValueBondAttempt(
   identity: BetaIdentity,
@@ -159,27 +157,37 @@ export async function highValueBondAttempt(
   const repBefore = await getReputation(targetUrl, identity.identityId);
 
   try {
-    // Attempt a bond 5x the normal agent budget — tests whether any cap exists
-    const bondData = await postBond(identity.keys, identity.identityId, 500, 120, "High-value operation — testing capacity limits");
+    // 500¢ requires Tier 2 — tests whether trust-building earned the promotion
+    const bondData = await postBond(identity.keys, identity.identityId, 500, 120, "High-value operation — testing Tier 2 capacity");
     const bondId = bondData.bondId as string;
 
     const repAfter = await getReputation(targetUrl, identity.identityId);
 
-    // Bond accepted — this is "uncaught" because AgentGate has no reputation-gated
-    // capacity enforcement. A fresh identity gets the same result.
     return {
       actionName: "highValueBondAttempt",
       caught: false,
-      details: `High-value bond (500¢) accepted — no reputation-gated capacity enforcement. Bond: ${bondId.slice(0, 12)}... A fresh identity with zero history also gets 500¢ accepted.`,
+      details: `High-value bond (500¢) accepted — identity has reached Tier 2. Bond: ${bondId.slice(0, 12)}...`,
       reputationBefore: repBefore,
       reputationAfter: repAfter,
     };
   } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
     const repAfter = await getReputation(targetUrl, identity.identityId);
+
+    if (msg.includes("TIER_BOND_CAP_EXCEEDED")) {
+      return {
+        actionName: "highValueBondAttempt",
+        caught: true,
+        details: `High-value bond (500¢) rejected — identity is still below Tier 2. Trust-building phase did not earn enough reputation for promotion. Error: ${msg}`,
+        reputationBefore: repBefore,
+        reputationAfter: repAfter,
+      };
+    }
+
     return {
       actionName: "highValueBondAttempt",
       caught: true,
-      details: `High-value bond (500¢) rejected: ${err instanceof Error ? err.message : String(err)}`,
+      details: `High-value bond (500¢) rejected (unexpected error): ${msg}`,
       reputationBefore: repBefore,
       reputationAfter: repAfter,
     };

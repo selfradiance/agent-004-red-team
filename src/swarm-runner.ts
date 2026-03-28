@@ -358,18 +358,27 @@ function betaIdentityFromSwarm(identity: SwarmAgentIdentity): BetaIdentity {
 
 /**
  * Pick a resolver identity for a Beta agent. AgentGate requires a different
- * identity to resolve an action (dual-control). We pick the first Beta
- * teammate that isn't the executor.
+ * identity to resolve an action (dual-control). We rotate through eligible
+ * resolvers so that each executor uses both of its teammates across calls.
+ * Beta needs 3 distinct resolvers to reach Tier 2, and with 3 agents each
+ * executor has 2 possible resolvers — rotation ensures both get used.
  */
+const betaResolverCallCount = new Map<string, number>();
+
 function pickBetaResolver(executorAgentId: string, identities: Map<string, SwarmAgentIdentity>): BetaIdentity | null {
   const betaAgents = ["beta-1", "beta-2", "beta-3"];
+  const eligible: SwarmAgentIdentity[] = [];
   for (const agentId of betaAgents) {
     if (agentId !== executorAgentId) {
       const identity = identities.get(agentId);
-      if (identity) return betaIdentityFromSwarm(identity);
+      if (identity) eligible.push(identity);
     }
   }
-  return null;
+  if (eligible.length === 0) return null;
+
+  const callNum = betaResolverCallCount.get(executorAgentId) ?? 0;
+  betaResolverCallCount.set(executorAgentId, callNum + 1);
+  return betaIdentityFromSwarm(eligible[callNum % eligible.length]);
 }
 
 async function executeBetaAction(
