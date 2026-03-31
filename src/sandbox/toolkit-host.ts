@@ -17,6 +17,11 @@ export interface ToolkitHostOptions {
     publicKey: string;
     privateKey: string;
   };
+  resolverIdentity?: {
+    identityId: string;
+    publicKey: string;
+    privateKey: string;
+  };
   restKey: string;
 }
 
@@ -225,6 +230,23 @@ const handlers: Record<string, MethodHandler> = {
     });
   },
 
+  async signedPostAsResolver(args, options) {
+    if (!options.resolverIdentity) {
+      throw new Error("signedPostAsResolver called but no resolver identity configured");
+    }
+    const [apiPath, body] = args as [string, unknown];
+    validatePath(apiPath);
+    const headers = makeSignedHeaders(
+      options.resolverIdentity.publicKey, options.resolverIdentity.privateKey,
+      options.restKey, "POST", apiPath, body,
+    );
+    return fetchWithTimeout(buildAndValidateUrl(apiPath, options.targetUrl), {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    });
+  },
+
   async getReputation(args, options) {
     const [identityId] = args as [string];
     try {
@@ -361,12 +383,14 @@ export function attachStubToolkitHost(child: ChildProcess): void {
         case "signedPost":
         case "signedPostWithControl":
         case "rawPost":
-        case "signedPostAs": {
+        case "signedPostAs":
+        case "signedPostAsResolver": {
           const stubArgs = m.args as unknown[];
+          // signedPostAs passes (identity, path, body); all others pass (path, body, ...)
           const stubPath = method === "signedPostAs" ? (stubArgs[1] as string) : (stubArgs[0] as string);
           validatePath(stubPath);
           validateNoOriginEscape(stubPath);
-          result = { status: 200, body: { stub: true } };
+          result = { status: 200, body: { stub: true, actionId: "stub-action-1" } };
           break;
         }
         case "rawGet": {

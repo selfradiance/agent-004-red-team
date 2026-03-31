@@ -14,6 +14,19 @@ export interface ScoutIdentity {
   identityId: string;
 }
 
+/** Safely extract a string field from an untyped response, throwing if missing. */
+export function requireStringField(
+  data: Record<string, unknown>,
+  field: string,
+  context: string,
+): string {
+  const value = data[field];
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error(`Expected string field '${field}' in ${context} response, got ${typeof value}`);
+  }
+  return value;
+}
+
 function toBase64Url(buffer: Buffer): string {
   return buffer.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }

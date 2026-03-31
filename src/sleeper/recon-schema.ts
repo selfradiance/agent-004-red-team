@@ -8,7 +8,7 @@ export const ReconFileSchema = z.object({
   // Metadata
   scout_identity_id: z.string(),
   resolver_identity_id: z.string(),
-  target_url: z.string(),
+  target_url: z.string().url(),
   created_at: z.string().datetime(),
 
   // S1: Rate Limit Boundary

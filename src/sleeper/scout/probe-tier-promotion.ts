@@ -4,7 +4,7 @@
 // Records when/whether tier changes.
 
 import type { ReconFile } from "../recon-schema.js";
-import { lockBond, executeAction, resolveAction, rawGet, type ScoutKeys } from "./scout-client.js";
+import { lockBond, executeAction, resolveAction, rawGet, requireStringField, type ScoutKeys } from "./scout-client.js";
 
 export const hypothesis = "tier_advancement_farming";
 
@@ -34,12 +34,12 @@ export async function probe(
     // Lock bond
     const bondResult = await lockBond(targetUrl, apiKey, scoutKeys, scoutIdentityId, 100);
     if (bondResult.status !== 200 && bondResult.status !== 201) continue;
-    const bondId = bondResult.data.bondId as string;
+    const bondId = requireStringField(bondResult.data, "bondId", "lockBond");
 
     // Execute at ≥83¢ exposure
     const actionResult = await executeAction(targetUrl, apiKey, scoutKeys, scoutIdentityId, bondId, 83);
     if (actionResult.status < 200 || actionResult.status >= 300) continue;
-    const actionId = actionResult.data.actionId as string;
+    const actionId = requireStringField(actionResult.data, "actionId", "executeAction");
 
     // Resolve as success
     await resolveAction(targetUrl, apiKey, resolverKeys, resolverIdentityId, actionId);

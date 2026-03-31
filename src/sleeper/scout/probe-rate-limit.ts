@@ -4,7 +4,7 @@
 // Max 15 requests.
 
 import type { ReconFile } from "../recon-schema.js";
-import { lockBond, executeAction, resolveAction, type ScoutKeys } from "./scout-client.js";
+import { lockBond, executeAction, resolveAction, requireStringField, type ScoutKeys } from "./scout-client.js";
 
 export const hypothesis = "rate_limit_exhaustion";
 
@@ -27,7 +27,7 @@ export async function probe(
   if (bondResult.status !== 200 && bondResult.status !== 201) {
     return { max_executes_before_429: 0, window_seconds: 60, recovery_observed: false };
   }
-  const bondId = bondResult.data.bondId as string;
+  const bondId = requireStringField(bondResult.data, "bondId", "lockBond");
 
   // Send rapid requests
   for (let i = 0; i < MAX_REQUESTS; i++) {
@@ -41,7 +41,7 @@ export async function probe(
     if (result.status >= 200 && result.status < 300) {
       successesBeforeLimit++;
       // Resolve action so scout stays compliant
-      const actionId = result.data.actionId as string;
+      const actionId = requireStringField(result.data, "actionId", "executeAction");
       await resolveAction(targetUrl, apiKey, resolverKeys, resolverIdentityId, actionId);
     }
   }
@@ -59,11 +59,11 @@ export async function probe(
     // Lock a new bond for the recovery test
     const recoveryBond = await lockBond(targetUrl, apiKey, scoutKeys, scoutIdentityId, 100);
     if (recoveryBond.status >= 200 && recoveryBond.status < 300) {
-      const recoveryBondId = recoveryBond.data.bondId as string;
+      const recoveryBondId = requireStringField(recoveryBond.data, "bondId", "lockBond");
       const recoveryResult = await executeAction(targetUrl, apiKey, scoutKeys, scoutIdentityId, recoveryBondId, 10);
       if (recoveryResult.status >= 200 && recoveryResult.status < 300) {
         recoveryObserved = true;
-        const actionId = recoveryResult.data.actionId as string;
+        const actionId = requireStringField(recoveryResult.data, "actionId", "executeAction");
         await resolveAction(targetUrl, apiKey, resolverKeys, resolverIdentityId, actionId);
       }
     }

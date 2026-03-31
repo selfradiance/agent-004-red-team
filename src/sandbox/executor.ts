@@ -27,6 +27,11 @@ export interface ExecutorOptions {
     publicKey: string;
     privateKey: string;
   };
+  resolverIdentity?: {
+    identityId: string;
+    publicKey: string;
+    privateKey: string;
+  };
   restKey?: string;
   personaName?: string;
   timeoutMs?: number;
@@ -94,6 +99,7 @@ export async function executeInSandbox(code: string, options?: ExecutorOptions):
         attachToolkitHost(child, {
           targetUrl: options.targetUrl,
           agentIdentity: options.agentIdentity,
+          resolverIdentity: options.resolverIdentity,
           restKey: options.restKey,
         });
       } else {

@@ -4,7 +4,7 @@
 // Needs Resolver Identity to resolve successful actions.
 
 import type { ReconFile } from "../recon-schema.js";
-import { lockBond, executeAction, resolveAction, type ScoutKeys } from "./scout-client.js";
+import { lockBond, executeAction, resolveAction, requireStringField, type ScoutKeys } from "./scout-client.js";
 
 export const hypothesis = "bond_capacity_calibration";
 
@@ -41,14 +41,14 @@ export async function probe(
       continue;
     }
 
-    const bondId = bondResult.data.bondId as string;
+    const bondId = requireStringField(bondResult.data, "bondId", "lockBond");
 
     // Execute action
     const actionResult = await executeAction(targetUrl, apiKey, scoutKeys, scoutIdentityId, bondId, p.exposureCents);
 
     if (actionResult.status >= 200 && actionResult.status < 300) {
       // Action succeeded — resolve it via Resolver
-      const actionId = actionResult.data.actionId as string;
+      const actionId = requireStringField(actionResult.data, "actionId", "executeAction");
       await resolveAction(targetUrl, apiKey, resolverKeys, resolverIdentityId, actionId);
       results.push({ bondCents: p.bondCents, exposureCents: p.exposureCents, succeeded: true });
     } else {

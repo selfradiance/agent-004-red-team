@@ -9,7 +9,7 @@ export const SLEEPER_IDENTITY_VERSION = "1.0" as const;
 const SleeperIdentitySchema = z.object({
   version: z.literal(SLEEPER_IDENTITY_VERSION),
   identity_id: z.string(),
-  target_url: z.string(),
+  target_url: z.string().url(),
   created_at: z.string().datetime(),
   keys: z.object({
     publicKey: z.string(),
@@ -38,7 +38,10 @@ export async function saveSleeperIdentity(
     keys,
   });
 
-  await writeFile(identityPath, JSON.stringify(record, null, 2), "utf-8");
+  await writeFile(identityPath, JSON.stringify(record, null, 2), {
+    encoding: "utf-8",
+    mode: 0o600,
+  });
   return record;
 }
 

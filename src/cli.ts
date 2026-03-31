@@ -153,43 +153,64 @@ async function main() {
     // Campaign mode: run all four strike variants after scout
     console.log("\n  Campaign mode: running 4 strike variants...\n");
 
-    // 1. Same identity + recon
-    await runStrike({
-      targetUrl: agentGateUrl,
-      apiKey: process.env.AGENTGATE_REST_KEY!,
-      reconFile: "recon.json",
-      identityMode: "same",
-      identityFile: identityFilePath,
-      scoutKeys: scoutResult.scoutKeys,
-      scoutIdentityId: scoutResult.scoutIdentityId,
-    });
+    const campaignVariants: Array<{ label: string; options: Parameters<typeof runStrike>[0] }> = [
+      {
+        label: "1. Same identity + recon",
+        options: {
+          targetUrl: agentGateUrl,
+          apiKey: process.env.AGENTGATE_REST_KEY!,
+          reconFile: "recon.json",
+          identityMode: "same",
+          identityFile: identityFilePath,
+          scoutKeys: scoutResult.scoutKeys,
+          scoutIdentityId: scoutResult.scoutIdentityId,
+        },
+      },
+      {
+        label: "2. Same identity + blind",
+        options: {
+          targetUrl: agentGateUrl,
+          apiKey: process.env.AGENTGATE_REST_KEY!,
+          identityMode: "same",
+          identityFile: identityFilePath,
+          scoutKeys: scoutResult.scoutKeys,
+          scoutIdentityId: scoutResult.scoutIdentityId,
+        },
+      },
+      {
+        label: "3. Fresh identity + recon",
+        options: {
+          targetUrl: agentGateUrl,
+          apiKey: process.env.AGENTGATE_REST_KEY!,
+          reconFile: "recon.json",
+          identityMode: "fresh",
+        },
+      },
+      {
+        label: "4. Fresh identity + blind",
+        options: {
+          targetUrl: agentGateUrl,
+          apiKey: process.env.AGENTGATE_REST_KEY!,
+          identityMode: "fresh",
+        },
+      },
+    ];
 
-    // 2. Same identity + blind
-    await runStrike({
-      targetUrl: agentGateUrl,
-      apiKey: process.env.AGENTGATE_REST_KEY!,
-      identityMode: "same",
-      identityFile: identityFilePath,
-      scoutKeys: scoutResult.scoutKeys,
-      scoutIdentityId: scoutResult.scoutIdentityId,
-    });
+    let campaignFailures = 0;
+    for (const variant of campaignVariants) {
+      try {
+        await runStrike(variant.options);
+      } catch (err) {
+        campaignFailures++;
+        console.error(`\n  Campaign variant "${variant.label}" failed: ${err instanceof Error ? err.message : String(err)}`);
+        console.error("  Continuing to next variant...\n");
+      }
+    }
 
-    // 3. Fresh identity + recon
-    await runStrike({
-      targetUrl: agentGateUrl,
-      apiKey: process.env.AGENTGATE_REST_KEY!,
-      reconFile: "recon.json",
-      identityMode: "fresh",
-    });
-
-    // 4. Fresh identity + blind
-    await runStrike({
-      targetUrl: agentGateUrl,
-      apiKey: process.env.AGENTGATE_REST_KEY!,
-      identityMode: "fresh",
-    });
-
-    // Generate report
+    // Generate report regardless of individual failures
+    if (campaignFailures > 0) {
+      console.log(`\n  ${campaignFailures}/4 campaign variants failed. Generating partial report...\n`);
+    }
     const report = await generateTemporalReport();
     console.log(report);
 

@@ -1,6 +1,5 @@
 import { z } from "zod";
-import { open, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { open, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 const AttackResultSchema = z.object({
@@ -51,31 +50,55 @@ export const DEFAULT_LOG_PATH = join(
 
 const LOCK_RETRY_MS = 25;
 const LOCK_TIMEOUT_MS = 2_000;
+const STALE_LOCK_MS = 30_000;
 
 async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function breakStaleLock(lockPath: string): Promise<boolean> {
+  try {
+    const lockStat = await stat(lockPath);
+    const age = Date.now() - lockStat.mtimeMs;
+    if (age > STALE_LOCK_MS) {
+      await rm(lockPath, { force: true });
+      return true;
+    }
+  } catch {
+    // Lock file gone or inaccessible — either way, proceed
+  }
+  return false;
+}
+
 async function acquireLogLock(logPath: string): Promise<() => Promise<void>> {
   const lockPath = `${logPath}.lock`;
   const deadline = Date.now() + LOCK_TIMEOUT_MS;
+  let staleLockBroken = false;
 
   while (true) {
     try {
       const handle = await open(lockPath, "wx");
+      // Write PID for diagnostics
+      await handle.write(`${process.pid}\n`);
       return async () => {
-        await handle.close();
+        try { await handle.close(); } catch { /* already closed */ }
         await rm(lockPath, { force: true });
       };
     } catch (err) {
       if (
         err instanceof Error &&
         "code" in err &&
-        err.code === "EEXIST" &&
-        Date.now() < deadline
+        err.code === "EEXIST"
       ) {
-        await sleep(LOCK_RETRY_MS);
-        continue;
+        // Try breaking stale lock once
+        if (!staleLockBroken) {
+          staleLockBroken = await breakStaleLock(lockPath);
+          if (staleLockBroken) continue;
+        }
+        if (Date.now() < deadline) {
+          await sleep(LOCK_RETRY_MS);
+          continue;
+        }
       }
       throw new InvalidCampaignLogError(`Failed to acquire campaign log lock for ${logPath}`);
     }
@@ -85,13 +108,13 @@ async function acquireLogLock(logPath: string): Promise<() => Promise<void>> {
 export async function readCampaignLog(
   logPath: string = DEFAULT_LOG_PATH
 ): Promise<CampaignLog> {
-  if (!existsSync(logPath)) {
-    return [];
-  }
   let raw: string;
   try {
     raw = await readFile(logPath, "utf-8");
   } catch (err) {
+    if (err instanceof Error && "code" in err && err.code === "ENOENT") {
+      return [];
+    }
     throw new InvalidCampaignLogError(
       `Failed to read campaign log ${logPath}: ${err instanceof Error ? err.message : String(err)}`
     );

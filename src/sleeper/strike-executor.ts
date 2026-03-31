@@ -35,7 +35,7 @@ function clampInt(value: unknown, fallback: number, min: number, max: number): n
 function normalizeApiPath(value: unknown, fallback: string): string {
   if (typeof value !== "string") return fallback;
   const trimmed = value.trim();
-  if (!trimmed.startsWith("/") || trimmed.startsWith("//")) return fallback;
+  if (!trimmed.startsWith("/") || trimmed.startsWith("//") || trimmed.includes("..")) return fallback;
   return trimmed;
 }
 
@@ -238,17 +238,13 @@ function buildStrikeCode(
   ctx: StrikeExecutionContext,
 ): string {
   const identityId = JSON.stringify(ctx.strikeIdentityId);
-  const resolver = JSON.stringify({
-    identityId: ctx.resolverIdentityId,
-    publicKey: ctx.resolverKeys.publicKey,
-    privateKey: ctx.resolverKeys.privateKey,
-  });
+  const resolverIdentityId = JSON.stringify(ctx.resolverIdentityId);
 
   switch (attack.objective_id) {
     case "T1":
       return `async function novelAttack(toolkit) {
   var identityId = ${identityId};
-  var resolver = ${resolver};
+  var resolverIdentityId = ${resolverIdentityId};
   var bondCents = ${JSON.stringify(attack.params.bond_cents)};
   var burstCount = ${JSON.stringify(attack.params.burst_count)};
   var delayMs = ${JSON.stringify(attack.params.delay_ms)};
@@ -289,10 +285,9 @@ function buildStrikeCode(
     if (result.status >= 200 && result.status < 300) {
       successes++;
       exposureUsed += exposureCents;
-      var resolveResult = await toolkit.signedPostAs(
-        resolver,
+      var resolveResult = await toolkit.signedPostAsResolver(
         "/v1/actions/" + result.body.actionId + "/resolve",
-        { outcome: "success", resolverId: resolver.identityId }
+        { outcome: "success", resolverId: resolverIdentityId }
       );
       requestCount++;
       if (resolveResult.status >= 300) {
@@ -321,7 +316,7 @@ function buildStrikeCode(
     case "T2":
       return `async function novelAttack(toolkit) {
   var identityId = ${identityId};
-  var resolver = ${resolver};
+  var resolverIdentityId = ${resolverIdentityId};
   var bondCents = ${JSON.stringify(attack.params.bond_cents)};
   var exposureCents = ${JSON.stringify(attack.params.exposure_cents)};
   var exposureUsed = 0;
@@ -352,10 +347,9 @@ function buildStrikeCode(
   var overflowSucceeded = result.status >= 200 && result.status < 300;
   if (overflowSucceeded) {
     exposureUsed = exposureCents;
-    var resolveResult = await toolkit.signedPostAs(
-      resolver,
+    var resolveResult = await toolkit.signedPostAsResolver(
       "/v1/actions/" + result.body.actionId + "/resolve",
-      { outcome: "success", resolverId: resolver.identityId }
+      { outcome: "success", resolverId: resolverIdentityId }
     );
     requestCount++;
     if (resolveResult.status >= 300) {
@@ -530,6 +524,11 @@ export async function executePreparedStrikeAttack(
       identityId: ctx.strikeIdentityId,
       publicKey: ctx.strikeKeys.publicKey,
       privateKey: ctx.strikeKeys.privateKey,
+    },
+    resolverIdentity: {
+      identityId: ctx.resolverIdentityId,
+      publicKey: ctx.resolverKeys.publicKey,
+      privateKey: ctx.resolverKeys.privateKey,
     },
   });
 
