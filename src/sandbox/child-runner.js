@@ -103,6 +103,10 @@ const toolkit = {
     return _toolkitCall("signedPostAs", [identity, path, body]);
   },
 
+  async signedPostAsResolver(path, body) {
+    return _toolkitCall("signedPostAsResolver", [path, body]);
+  },
+
   async sleep(ms) {
     return _toolkitCall("sleep", [ms]);
   },
