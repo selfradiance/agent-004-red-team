@@ -29,10 +29,11 @@ describe("Strike Strategist", () => {
     }
   });
 
-  it("getDefaultStrategy sets recon_dependency = true for recon runs", () => {
+  it("getDefaultStrategy sets recon_dependency = false for all attacks (hardcoded params)", () => {
     const strategy = getDefaultStrategy(1, false);
-    const reconDependent = strategy.attacks.filter((a) => a.recon_dependency);
-    expect(reconDependent.length).toBeGreaterThan(0);
+    for (const attack of strategy.attacks) {
+      expect(attack.recon_dependency).toBe(false);
+    }
   });
 
   it("default strategy targets multiple objectives", () => {

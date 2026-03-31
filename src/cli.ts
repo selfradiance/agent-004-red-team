@@ -58,7 +58,23 @@ async function main() {
   const reconFilePath = reconFileIndex !== -1 ? process.argv[reconFileIndex + 1] : undefined;
 
   const identityModeIndex = process.argv.indexOf("--identity-mode");
-  const identityMode = identityModeIndex !== -1 ? process.argv[identityModeIndex + 1] as "same" | "fresh" : "fresh";
+  const identityModeRaw = identityModeIndex !== -1 ? process.argv[identityModeIndex + 1] : "fresh";
+  if (identityModeRaw !== "same" && identityModeRaw !== "fresh") {
+    console.error(`Error: --identity-mode must be "same" or "fresh" (got "${identityModeRaw}").`);
+    process.exit(1);
+  }
+  const identityMode = identityModeRaw as "same" | "fresh";
+
+  // Sleeper mutual exclusivity checks
+  const sleeperFlags = [isScout, isStrike, isCampaign, isReportTemporal].filter(Boolean).length;
+  if (sleeperFlags > 1 && !(isScout && isCampaign)) {
+    console.error("Error: --scout, --strike, --campaign, and --report-temporal are mutually exclusive (except --scout with --campaign).");
+    process.exit(1);
+  }
+  if (sleeperFlags > 0 && (isStatic || isRecursive || isTeam || isSwarm)) {
+    console.error("Error: sleeper flags (--scout, --strike, --campaign, --report-temporal) cannot be combined with --static, --recursive, --team, or --swarm.");
+    process.exit(1);
+  }
 
   // --team implies --recursive, --swarm implies --recursive
   const isRecursiveEffective = isRecursive || isTeam;
@@ -134,6 +150,8 @@ async function main() {
       apiKey: process.env.AGENTGATE_REST_KEY!,
       reconFile: "recon.json",
       identityMode: "same",
+      scoutKeys: scoutResult.scoutKeys,
+      scoutIdentityId: scoutResult.scoutIdentityId,
     });
 
     // 2. Same identity + blind
@@ -141,6 +159,8 @@ async function main() {
       targetUrl: agentGateUrl,
       apiKey: process.env.AGENTGATE_REST_KEY!,
       identityMode: "same",
+      scoutKeys: scoutResult.scoutKeys,
+      scoutIdentityId: scoutResult.scoutIdentityId,
     });
 
     // 3. Fresh identity + recon

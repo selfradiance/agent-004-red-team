@@ -31,7 +31,12 @@ interface StrikeMetrics {
 
 async function loadRecon(path: string): Promise<ReconFile> {
   const raw = await readFile(path, "utf-8");
-  const parsed = JSON.parse(raw);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(`Failed to parse recon file ${path}: ${err instanceof Error ? err.message : String(err)}`);
+  }
   return ReconFileSchema.parse(parsed);
 }
 
@@ -198,6 +203,10 @@ export async function runStrike(options: StrikeOptions): Promise<CampaignRun> {
   let timeToFirstBoundary = 0;
 
   for (let round = 1; round <= rounds; round++) {
+    if (totalExposure >= BUDGET) {
+      console.log(`\n  Budget exhausted (${totalExposure}/${BUDGET}¢). Ending early at round ${round - 1}.`);
+      break;
+    }
     console.log(`\n  ── Round ${round}/${rounds} ──`);
     const budgetRemaining = BUDGET - totalExposure;
 
@@ -213,6 +222,12 @@ export async function runStrike(options: StrikeOptions): Promise<CampaignRun> {
     console.log(`  Attacks: ${strategy.attacks.length}`);
 
     for (const attack of strategy.attacks) {
+      // Enforce budget
+      if (totalExposure >= BUDGET) {
+        console.log(`    Budget exhausted (${totalExposure}/${BUDGET}¢). Skipping remaining attacks.`);
+        break;
+      }
+
       console.log(`    [${attack.objective_id}] ${attack.reasoning.slice(0, 80)}`);
       const outcome = await executeStrikeAttack(
         attack, targetUrl, apiKey, strikeKeys, strikeIdentityId, resolverKeys, resolverIdentityId,

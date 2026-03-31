@@ -2,8 +2,24 @@
 // based on the 6 fixed objectives (T1–T6), recon context, and prior round results.
 
 import Anthropic from "@anthropic-ai/sdk";
+import { z } from "zod";
 import { quoteIntelForPrompt } from "../intel-log.js";
 import type { ReconFile } from "./recon-schema.js";
+
+const VALID_OBJECTIVES = ["T1", "T2", "T3", "T4", "T5", "T6"] as const;
+
+const StrikeAttackSchema = z.object({
+  objective_id: z.enum(VALID_OBJECTIVES),
+  params: z.record(z.string(), z.unknown()),
+  reasoning: z.string(),
+  recon_dependency: z.boolean(),
+});
+
+const StrikeStrategySchema = z.object({
+  round: z.number(),
+  strategy: z.string(),
+  attacks: z.array(StrikeAttackSchema).min(1).max(6),
+});
 
 export interface StrikeAttack {
   objective_id: string;
@@ -158,7 +174,14 @@ function parseStrategyResponse(text: string, round: number, isBlind: boolean): S
   const cleaned = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
 
   try {
-    const parsed = JSON.parse(cleaned) as StrikeStrategy;
+    const raw = JSON.parse(cleaned);
+    const validated = StrikeStrategySchema.safeParse(raw);
+    if (!validated.success) {
+      console.log(`  Strategy response failed validation: ${validated.error.issues.map((i) => i.message).join(", ")}`);
+      return getDefaultStrategy(round, isBlind);
+    }
+
+    const parsed = validated.data as StrikeStrategy;
 
     // Enforce control protocol: blind runs always have recon_dependency = false
     if (isBlind) {
@@ -179,8 +202,8 @@ export function getDefaultStrategy(round: number, isBlind: boolean): StrikeStrat
     round,
     strategy: "Default fallback strategy — probing all objectives",
     attacks: [
-      { objective_id: "T1", params: { burst_count: 11, delay_ms: 0 }, reasoning: "Probe rate limits", recon_dependency: !isBlind },
-      { objective_id: "T2", params: { bond_cents: 100, exposure_cents: 85 }, reasoning: "Test capacity boundary", recon_dependency: !isBlind },
+      { objective_id: "T1", params: { burst_count: 11, delay_ms: 0 }, reasoning: "Probe rate limits", recon_dependency: false },
+      { objective_id: "T2", params: { bond_cents: 100, exposure_cents: 85 }, reasoning: "Test capacity boundary", recon_dependency: false },
       { objective_id: "T6", params: { endpoints: ["/health", "/v1/stats"] }, reasoning: "Extract public data", recon_dependency: false },
     ],
   };

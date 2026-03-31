@@ -2,7 +2,8 @@
 
 import { writeFile } from "node:fs/promises";
 import { ReconFileSchema, RECON_VERSION, type ReconFile } from "./recon-schema.js";
-import { generateKeypair, createScoutIdentity, type ScoutIdentity } from "./scout/scout-client.js";
+import { generateKeypair, createScoutIdentity, type ScoutIdentity, type ScoutKeys } from "./scout/scout-client.js";
+import { appendRun, type CampaignRun } from "./campaign-log.js";
 import { probe as probeEndpointShape } from "./scout/probe-endpoint-shape.js";
 import { probe as probeErrorLeakage } from "./scout/probe-error-leakage.js";
 import { probe as probeTimestampWindow } from "./scout/probe-timestamp-window.js";
@@ -16,9 +17,16 @@ export interface ScoutOptions {
   apiKey: string;
   skipNonceTtl?: boolean;
   outputPath?: string;
+  campaignLogPath?: string;
 }
 
-export async function runScout(options: ScoutOptions): Promise<ReconFile> {
+export interface ScoutResult {
+  recon: ReconFile;
+  scoutKeys: ScoutKeys;
+  scoutIdentityId: string;
+}
+
+export async function runScout(options: ScoutOptions): Promise<ScoutResult> {
   const { targetUrl, apiKey, skipNonceTtl = false, outputPath = "recon.json" } = options;
 
   console.log("\n╔═══════════════════════════════════════════╗");
@@ -113,12 +121,11 @@ export async function runScout(options: ScoutOptions): Promise<ReconFile> {
   // Step 10: Validate combined results
   const validated = ReconFileSchema.safeParse(recon);
   if (!validated.success) {
-    console.log("\n  WARNING: Recon file failed schema validation.");
-    console.log(`  Errors: ${JSON.stringify(validated.error.issues, null, 2)}`);
+    throw new Error(`Recon file failed schema validation: ${JSON.stringify(validated.error.issues, null, 2)}`);
   }
 
   // Step 11: Write recon.json
-  const reconFile = recon as ReconFile;
+  const reconFile = validated.data;
   await writeFile(outputPath, JSON.stringify(reconFile, null, 2), "utf-8");
   console.log(`\n  Recon file written to: ${outputPath}`);
 
@@ -141,5 +148,25 @@ export async function runScout(options: ScoutOptions): Promise<ReconFile> {
   console.log(`  Output: ${outputPath}`);
   console.log("  ════════════════════════════════════════\n");
 
-  return reconFile;
+  // Step 13: Append scout run to campaign log
+  const scoutRun: CampaignRun = {
+    run_id: `scout-${Date.now()}`,
+    mode: "scout",
+    identity_mode: "same",
+    recon_mode: "recon",
+    timestamp: new Date().toISOString(),
+    metrics: {
+      success_rate: sections.length / 7,
+      cost_effective_exposure: 0,
+      probe_count: sections.length,
+      precision: 1,
+      recon_dependent_count: 0,
+      time_to_first_boundary: 0,
+    },
+    attack_log: [],
+  };
+  await appendRun(options.campaignLogPath ?? "temporal-campaign-log.json", scoutRun);
+  console.log(`  Scout run appended to campaign log.\n`);
+
+  return { recon: reconFile, scoutKeys, scoutIdentityId };
 }
