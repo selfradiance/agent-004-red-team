@@ -18,7 +18,7 @@ const StrikeAttackSchema = z.object({
 const StrikeStrategySchema = z.object({
   round: z.number(),
   strategy: z.string(),
-  attacks: z.array(StrikeAttackSchema).min(1).max(6),
+  attacks: z.array(StrikeAttackSchema).min(2).max(4),
 });
 
 export interface StrikeAttack {
@@ -53,13 +53,15 @@ T5: Error-Informed Targeted Attack — Use error messages to exploit weakest val
 T6: Unauthenticated State Extraction — Extract operational intelligence from public GET endpoints. Budget: max 10 requests.
 `;
 
-const CONSTRAINTS = `
+function buildConstraints(totalRounds: number): string {
+  return `
 Total budget (effective exposure): 2,000¢
-Rounds: 3
+Rounds: ${totalRounds}
 Objectives per round: 2–4
 Retries per objective: Max 3
 Starting tier: Tier 1
 `;
+}
 
 function buildReconContext(recon: ReconFile | null): string {
   if (!recon) return "";
@@ -100,7 +102,7 @@ function buildReconContext(recon: ReconFile | null): string {
 function buildPriorResults(prior: AttackOutcome[]): string {
   if (prior.length === 0) return "No prior results.";
   return prior
-    .map((r) => `${r.objective_id}: ${r.success ? "SUCCESS" : "FAILED"} — ${r.details.slice(0, 100)}`)
+    .map((r) => `${r.objective_id}: ${r.success ? "SUCCESS" : "FAILED"} — details=${quoteIntelForPrompt(r.details, 160)}`)
     .join("\n");
 }
 
@@ -109,6 +111,7 @@ export async function planStrike(
   recon: ReconFile | null,
   priorResults: AttackOutcome[],
   budgetRemaining: number,
+  totalRounds: number,
 ): Promise<StrikeStrategy> {
   const anthropic = new Anthropic();
 
@@ -123,7 +126,7 @@ OBJECTIVES:
 ${OBJECTIVES}
 
 CONSTRAINTS:
-${CONSTRAINTS}
+${buildConstraints(totalRounds)}
 
 Budget remaining: ${budgetRemaining}¢
 

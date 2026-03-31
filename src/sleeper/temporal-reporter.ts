@@ -14,6 +14,10 @@ function findRun(log: CampaignLog, identityMode: string, reconMode: string): Cam
     .find((r) => r.mode === "strike" && r.identity_mode === identityMode && r.recon_mode === reconMode);
 }
 
+function findLatestScoutRun(log: CampaignLog): CampaignRun | undefined {
+  return [...log].reverse().find((r) => r.mode === "scout");
+}
+
 function formatMetric(value: number | undefined, type: "percent" | "cents" | "count" | "seconds"): string {
   if (value === undefined) return "N/A";
   switch (type) {
@@ -81,7 +85,7 @@ function computeDeltas(log: CampaignLog): string {
   }
 
   // Finding B: Information extraction not priced/penalized
-  const scoutRun = log.find((r) => r.mode === "scout");
+  const scoutRun = findLatestScoutRun(log);
   if (scoutRun) {
     sections.push(`Finding B — Scout completed with ${scoutRun.metrics.probe_count} probes at ${scoutRun.metrics.cost_effective_exposure}¢ exposure. Compliant information extraction was not penalized.`);
   } else {

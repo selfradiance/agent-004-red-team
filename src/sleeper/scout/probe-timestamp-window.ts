@@ -3,9 +3,16 @@
 // Requests fail at validation — no bonds or actions created.
 
 import type { ReconFile } from "../recon-schema.js";
-import { generateKeypair, signedPostWithTimestamp, type ScoutKeys } from "./scout-client.js";
+import { signedPostWithTimestamp, type RawResponse, type ScoutKeys } from "./scout-client.js";
 
 export const hypothesis = "timestamp_window_exploitation";
+
+function isTimestampRejected(response: RawResponse): boolean {
+  const code = String(response.data.code ?? response.data.error ?? "").toLowerCase();
+  const message = String(response.data.message ?? response.data.error ?? "").toLowerCase();
+  const combined = `${code} ${message}`;
+  return combined.includes("timestamp") || combined.includes("stale") || combined.includes("future");
+}
 
 export async function probe(
   targetUrl: string,
@@ -18,10 +25,15 @@ export async function probe(
 
   for (const offsetSec of offsets) {
     const timestampMs = Date.now() + offsetSec * 1000;
-    const ephemeral = generateKeypair();
-    const body = { publicKey: ephemeral.publicKey };
-    const r = await signedPostWithTimestamp(targetUrl, apiKey, scoutKeys, "/v1/identities", body, timestampMs);
-    const accepted = r.status >= 200 && r.status < 300;
+    const body = {
+      identityId: scoutIdentityId,
+      amountCents: -100,
+      currency: "USD",
+      ttlSeconds: 300,
+      reason: "timestamp-probe",
+    };
+    const r = await signedPostWithTimestamp(targetUrl, apiKey, scoutKeys, "/v1/bonds/lock", body, timestampMs);
+    const accepted = !isTimestampRejected(r);
     results.push({ offsetSeconds: offsetSec, accepted, statusCode: r.status });
   }
 

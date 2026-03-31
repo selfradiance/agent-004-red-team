@@ -120,7 +120,7 @@ export async function runStrike(options: StrikeOptions): Promise<CampaignRun> {
 
     let strategy: StrikeStrategy;
     try {
-      strategy = await planStrike(round, recon, allOutcomes, budgetRemaining);
+      strategy = await planStrike(round, recon, allOutcomes, budgetRemaining, rounds);
     } catch (err) {
       console.log(`  Strategist failed: ${err instanceof Error ? err.message : String(err)}`);
       strategy = getDefaultStrategy(round, isBlind);
@@ -177,15 +177,19 @@ export async function runStrike(options: StrikeOptions): Promise<CampaignRun> {
   }
 
   // Calculate metrics
-  const successCount = allOutcomes.filter((o) => o.success).length;
-  const boundaryEngagements = allOutcomes.filter((o) => o.response_status === 429 || o.response_status === 400 || o.success).length;
-  const reconDependentCount = allAttackLogs.filter((a) => a.recon_dependency).length;
+  const executedOutcomes = allOutcomes.filter((o) => (o.request_count ?? 0) > 0);
+  const successCount = executedOutcomes.filter((o) => o.success).length;
+  const boundaryEngagements = executedOutcomes.filter((o) => o.response_status === 429 || o.response_status === 400 || o.success).length;
+  const reconDependentCount = allAttackLogs.reduce((count, attackLog, index) => {
+    const outcome = allOutcomes[index];
+    return count + (attackLog.recon_dependency && (outcome?.request_count ?? 0) > 0 ? 1 : 0);
+  }, 0);
 
   const metrics: StrikeMetrics = {
-    success_rate: allOutcomes.length > 0 ? successCount / allOutcomes.length : 0,
+    success_rate: executedOutcomes.length > 0 ? successCount / executedOutcomes.length : 0,
     cost_effective_exposure: totalExposure,
     probe_count: totalProbes,
-    precision: allOutcomes.length > 0 ? boundaryEngagements / allOutcomes.length : 0,
+    precision: executedOutcomes.length > 0 ? boundaryEngagements / executedOutcomes.length : 0,
     recon_dependent_count: reconDependentCount,
     time_to_first_boundary: timeToFirstBoundary,
   };

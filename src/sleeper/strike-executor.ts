@@ -113,7 +113,10 @@ export function prepareStrikeAttack(
             exposure_cents: exposureCents,
           },
           estimatedExposure: burstCount * exposureCents,
-          timeoutMs: DEFAULT_TIMEOUT_MS,
+          timeoutMs: Math.max(
+            DEFAULT_TIMEOUT_MS,
+            10_000 + burstCount * (clampInt(attack.params.delay_ms, 0, 0, 500) + 500),
+          ),
         },
       };
     }
