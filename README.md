@@ -1,240 +1,100 @@
 # Agent 004: Red Team Simulator
 
-An adaptive, recursive, and coordinated red team agent that attacks live AgentGate infrastructure with three teams of three agents (9 identities). Claude picks attacks, reasons about defense gaps, generates novel JavaScript attack code in a sandbox, and coordinates multi-identity swarm campaigns. Built on the bond-and-slash accountability model — the attacker posts collateral too.
+An external adversarial test rig for AgentGate. It attacks a live AgentGate instance from the outside over HTTP — the way a real adversary would — and reports which defenses held and which did not.
 
-## What This Does
+## Why This Exists
 
-Agent 004 runs 48 attack scenarios across 12 categories against a live AgentGate instance over HTTP. Five modes of operation:
+AI agents are being deployed with broad access and zero adversarial testing. AgentGate has internal red team tests, but those run inside the codebase with direct database access. That's not how real attackers work. Agent 004 attacks from the outside, with its own identity and its own consequences.
 
-- **Static:** Runs all 48 attacks in fixed order (regression testing)
-- **Adaptive:** A Claude-powered strategist picks attacks each round and adapts based on results (default)
-- **Recursive:** Adaptive mode plus novel attack generation — Claude writes new JavaScript attack code and executes it in a permission-restricted sandbox
-- **Team:** Three specialist personas (Shadow, Whale, Chaos) with separate identities, bond budgets, and coordinated operations — tests whether per-identity defenses hold under multi-identity pressure
-- **Swarm:** Three teams of three agents (9 identities) with per-team strategists, a campaign coordinator, shared intelligence log, and 5-round interleaved campaigns — tests whether defenses hold under coordinated 9-agent pressure
+The question it answers: can AgentGate's bond-and-slash model withstand systematic adversarial probing from an external agent?
 
-This is the fourth agent built on [AgentGate](https://github.com/selfradiance/agentgate). It's the first one designed to attack rather than use the system.
+## How It Relates to AgentGate
 
-## The Agent Progression
+[AgentGate](https://github.com/selfradiance/agentgate) is both the enforcement substrate AND the attack target. Agent 004 calls AgentGate's API for identity and bond management, and also sends intentionally malformed and adversarial requests to test AgentGate's defenses.
 
-- **Agent 001** ([File Transform](https://github.com/selfradiance/agent-001-file-transform)): Deterministic verification — hash match
-- **Agent 002** ([File Guardian](https://github.com/selfradiance/agent-002-file-guardian)): Command-based verification — script pass/fail
-- **Agent 003** ([Email Rewriter](https://github.com/selfradiance/agent-003-email-rewriter)): Human judgment — approve/reject
-- **Agent 004** (Red Team Simulator): Adversarial testing — attack and report
+AgentGate must be running for Agent 004 to work.
 
-## Prerequisites
+## Five Stages
 
-- Node.js 22+ (for `--permission` flag used by the sandbox)
-- A running [AgentGate](https://github.com/selfradiance/agentgate) instance (local or remote)
-- An Anthropic API key (for strategist, reasoner, generator, and report generation)
+The simulator was built progressively, each stage harder than the last:
 
-## Setup
+| Stage | Version | What it does |
+|-------|---------|-------------|
+| **Static** | v0.1.0 | 15 predefined attacks across 6 categories (replay, bond capacity, signature tampering, authorization, input validation, rate limiting) |
+| **Adaptive** | v0.2.0 | Claude-powered strategist generates 48 attack scenarios across 12 categories based on AgentGate's actual API responses |
+| **Recursive** | v0.3.0 | Claude generates novel JavaScript attack code, executed in a sandboxed child process with a 4-layer defense model (Node 22 permission flags, global nullification, IPC-only toolkit, string-level validator) |
+| **Coordinated Team** | v0.4.0 | Three specialist personas (Shadow, Whale, Chaos) with distinct bond budgets and attack-family priorities, coordinated by the strategist |
+| **Coordinated Swarms** | v0.5.0 | Three teams of three agents (9 identities), per-team strategists, campaign coordinator, interleaved execution, shared intelligence log. 5-round campaigns. Three-tier provenance in reporting. |
+
+### Sleeper Agent (v0.6.0)
+
+A temporal attack pattern: the agent scouts AgentGate's defenses during a compliant bonded session, releases its bond cleanly, then returns later armed with the reconnaissance it gathered. Tests whether AgentGate can govern information extraction, not just action integrity. Includes same-identity vs. fresh-identity modes and a blind baseline (control group).
+
+## What's Implemented
+
+- 15 static attack scenarios + Claude-generated adaptive and recursive attacks
+- Four-layer sandbox for generated attack code
+- Three-persona coordinated teams (Shadow, Whale, Chaos)
+- Nine-agent coordinated swarms with campaign coordination
+- Sleeper agent scout/strike temporal pattern with recon file persistence
+- Claude API findings report generation with three-tier provenance classification
+- Full AgentGate lifecycle per attack: identity → bond → attack → resolve
+- Ed25519 signed requests
+
+## Quick Start
 
 ```bash
-git clone git@github.com:selfradiance/agent-004-red-team.git
-cd agent-004-red-team
+# 1. Start AgentGate
+cd ~/Desktop/projects/agentgate && npm run restart
+
+# 2. Run Agent 004
+cd ~/Desktop/projects/agent-004-red-team
+cp .env.example .env  # add AGENTGATE_REST_KEY and ANTHROPIC_API_KEY
 npm install
-cp .env.example .env
-# Edit .env with your keys
-```
 
-## Usage
-
-Adaptive mode (default — 3 rounds, strategist picks attacks):
-
-```bash
+# Static attacks
 npx tsx src/cli.ts
-```
 
-Adaptive with custom rounds:
+# Adaptive attacks
+npx tsx src/cli.ts --adaptive
 
-```bash
-npx tsx src/cli.ts --rounds 5
-```
-
-Static mode (all 48 attacks in fixed order — for regression testing):
-
-```bash
-npx tsx src/cli.ts --static
-```
-
-Recursive mode (adaptive + novel attack generation in a sandbox):
-
-```bash
-npx tsx src/cli.ts --recursive
-```
-
-Team mode (3 personas with coordinated operations):
-
-```bash
-npx tsx src/cli.ts --team
-```
-
-Team mode with fresh identities (required for canonical verification runs):
-
-```bash
-npx tsx src/cli.ts --team --fresh-team
-```
-
-Team mode with custom rounds:
-
-```bash
-npx tsx src/cli.ts --team --rounds 5
-```
-
-Swarm mode (3 teams × 3 agents, 5-round campaign, interleaved execution):
-
-```bash
+# Full swarm campaign
 npx tsx src/cli.ts --swarm
+
+# Sleeper agent scout + strike
+npx tsx src/cli.ts --scout
+npx tsx src/cli.ts --strike --recon-file recon.json
 ```
 
-Swarm mode with fresh identities (required for canonical verification runs):
+## Key Result
 
-```bash
-npx tsx src/cli.ts --fresh-swarm
-```
+Across all five stages plus the sleeper agent: AgentGate held. 97 offensive attacks in the swarm campaign, 0 swarm-emergent findings. The swarm did surface a legitimate governance limitation (no reputation-gated capacity), which was then implemented and re-tested.
 
-Swarm mode with sequential execution (slower but easier to read):
+## Scope / Non-Goals
 
-```bash
-npx tsx src/cli.ts --fresh-swarm --sequential
-```
-
-Swarm mode with custom rounds:
-
-```bash
-npx tsx src/cli.ts --swarm --rounds 3
-```
-
-Target a specific AgentGate instance:
-
-```bash
-npx tsx src/cli.ts --target https://agentgate.run
-```
-
-**Flag rules:**
-- `--static` and `--team` are mutually exclusive (exits with error)
-- `--static` and `--recursive` are mutually exclusive
-- `--static` and `--swarm` are mutually exclusive
-- `--team` and `--swarm` are mutually exclusive
-- `--fresh-team` requires `--team`
-- `--fresh-swarm` implies `--swarm`
-- `--sequential` applies to swarm mode only
-- `--team` implies recursive mode (novel attack generation is included)
-- If `--static` and `--rounds` are both passed, `--static` takes precedence and `--rounds` is ignored
-- `--rounds` is capped at 20 to prevent runaway API costs
-- `--static` mode can run without `ANTHROPIC_API_KEY` (report generation is skipped)
-
-## Stage 2: Adaptive Mode
-
-The default mode runs a 3-round adaptive loop:
-
-1. **Round 1:** Strategist picks low-cost probes — recon, protocol checks, signature fuzzing. Gathers intelligence across many categories.
-2. **Round 2:** Strategist escalates based on Round 1 results — boundary probing, timing attacks, race conditions. Doubles down on anything that returned unexpected results.
-3. **Round 3:** Highest-value targets — multi-step chains, Sybil campaigns, economic attacks, market abuse. Uses everything learned in prior rounds.
-
-The strategist cannot invent new attacks — it picks from the 48-scenario library and can tune parameters (e.g., timestamp age, payload size, identity count) to probe boundaries.
-
-## Stage 3: Recursive Mode
-
-Recursive mode adds novel attack generation on top of the adaptive loop. Each round:
-
-1. **Strategist** picks library attacks (same as adaptive)
-2. **Reasoner** analyzes all prior results and hypothesizes 2-5 novel attack vectors
-3. **Generator** turns each hypothesis into a JavaScript attack function using a constrained toolkit API
-4. **Validator** checks the generated code against a blocklist, structural rules, and novelty gate
-5. **Sandbox** executes the validated code in a permission-restricted Node.js child process
-
-The sandbox has four layers of defense:
-- **Node.js permission flags** — filesystem and child process restrictions
-- **Global nullification** — dangerous globals (fetch, require, process, eval, Function, timers) deleted before code runs
-- **IPC-only toolkit** — generated code can only call toolkit methods that send IPC messages to the parent; the parent makes all real HTTP calls
-- **String-level validator** — blocklist catches hallucinated dangerous patterns before execution
-
-## Stage 4: Team Mode
-
-Team mode adds three specialist personas with separate AgentGate identities and coordinated operations. The thesis: can an accountability system that is robust against one attacker still hold up when adversarial pressure is distributed across multiple identities with coordinated roles?
-
-### The Personas
-
-| Persona | Specialty | Bond Budget | Attack Families |
-|---------|-----------|-------------|-----------------|
-| Shadow | Recon & Timing | 50¢ | Replay, Signature, Timing, Recon |
-| Whale | Economic & Bond | 200¢ | Bond, Rate Limit/Sybil, Market, Economic |
-| Chaos | Input Fuzzing & Protocol | 100¢ | Authorization, Input Validation, Protocol, MCP |
-
-### Coordination Types
-
-**Handoff:** Persona A runs an attack and produces a finding. That intel is passed to Persona B, whose attack is parameterized by the intel. Tests whether intel from one identity helps another identity exploit a defense.
-
-**Distributed Probe:** Two personas attack the same defense simultaneously from their own identities (500ms stagger). Tests whether AgentGate's per-identity defenses remain correctly isolated under concurrent cross-identity load.
-
-## Stage 5: Swarm Mode
-
-Swarm mode deploys three teams of three agents (9 identities total) in a coordinated campaign:
-
-### The Teams
-
-| Team | Objective | Budget | Agents |
-|------|-----------|--------|--------|
-| Alpha | Reconnaissance — map defenses, discover endpoints, probe timing | 150¢ (50¢/agent) | alpha-1, alpha-2, alpha-3 |
-| Beta | Trust exploitation — build reputation, then exploit trust assumptions | 300¢ (100¢/agent) | beta-1, beta-2, beta-3 |
-| Gamma | Coordinated pressure — synchronized attacks to overwhelm per-identity defenses | 450¢ (150¢/agent) | gamma-1, gamma-2, gamma-3 |
-
-### How It Works
-
-1. Each team has its own Claude-powered strategist that picks attacks based on team objectives and shared intelligence
-2. A campaign coordinator synthesizes cross-team intelligence between rounds
-3. Teams share findings via an intel log — indirect coordination, no direct communication
-4. Beta runs a two-phase model: trust-building (clean bond cycles in early rounds), then offensive trust-spending (late rounds)
-5. AgentGate enforces dual-control on resolution: Beta agents resolve each other's actions within the team
-6. Default 5 rounds with interleaved execution across all teams
-
-### Canonical v0.5.0 Run Results
-
-- 97 total attacks (Alpha 37, Beta 22, Gamma 38)
-- 77 caught, 20 uncaught (79% catch rate)
-- Gamma: 100% catch rate (38/38) — economic pressure fully contained
-- Beta: 48 clean bond cycles succeeded in trust-building phase
-- 0 swarm-emergent findings — AgentGate does not gate bond capacity on identity history
-- 73 intel log entries, coordinator synthesis every round
-- ~5 minutes runtime
-
-## Attack Categories
-
-| Category | Scenarios | What It Tests |
-|----------|-----------|---------------|
-| Replay & Timestamp | 5 | Duplicate nonces, reused signatures, expired and future timestamps |
-| Bond & Exposure | 7 | Capacity limits, double-resolve, expired bonds, multi-action exhaustion |
-| Signature & Header Abuse | 5 | Wrong keys, garbage signatures, cross-endpoint, header canonicalization |
-| Authorization & Identity | 5 | Admin access, cross-identity resolution, duplicate keys, auto-ban |
-| Input Validation | 6 | Oversized payloads, TTL caps, negative amounts, type coercion, max-length |
-| Rate Limiting & Sybil | 3 | Burst floods, Sybil bypass, bucket expiry |
-| Timing & Race Conditions | 3 | Sweeper races, parallel resolve, rapid identity creation |
-| Protocol Abuse | 2 | Wrong HTTP methods, wrong Content-Type |
-| MCP Transport Abuse | 3 | Unauthenticated MCP, session exhaustion, oversized payloads |
-| Market Abuse | 4 | Early resolution, auth bypass, position spam, malformed payloads |
-| Economic & Reputation | 3 | Reputation pumping, Sybil campaigns, resource exhaustion |
-| Recon & Side-Channel | 2 | Endpoint data mapping, XSS payload escaping |
+- Attacks over HTTP only — no database-level or code-level access
+- Single AgentGate instance — no distributed testing
+- Swarm-sleeper integration is future work
+- This is a test rig, not a production security tool
 
 ## Tests
+
+330 tests across multiple test files, covering all five stages plus the sleeper agent.
 
 ```bash
 npm test
 ```
 
-306 tests across 34 test files. Integration tests require a running AgentGate instance and valid API keys.
+## Related Projects
 
-## Tech Stack
+- [AgentGate](https://github.com/selfradiance/agentgate) — the attack target and enforcement substrate
+- [Agent 005: Recursive Verifier](https://github.com/selfradiance/agentgate-recursive-verifier) — reuses Agent 004's sandbox architecture for constructive verification
+- [Agent 006: Incentive Wargame](https://github.com/selfradiance/agentgate-incentive-wargame) — stress-tests economic rules
 
-TypeScript, Node.js 22+, Vitest, Anthropic Claude API, Ed25519 signing
+## Status
+
+Complete — v0.6.0 shipped. Triple-audited (Claude Code 8-round + Codex cold-eyes + Claude Code cross-verification). 330 tests.
 
 ## License
 
 MIT
-
-## Part of the AgentGate Ecosystem
-
-- [AgentGate](https://github.com/selfradiance/agentgate) — the enforcement engine
-- [Agent 001: File Transform](https://github.com/selfradiance/agent-001-file-transform)
-- [Agent 002: File Guardian](https://github.com/selfradiance/agent-002-file-guardian)
-- [Agent 003: Email Rewriter](https://github.com/selfradiance/agent-003-email-rewriter)
